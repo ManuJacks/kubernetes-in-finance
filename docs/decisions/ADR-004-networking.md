@@ -17,8 +17,12 @@ Multipass currently exposes three separate zone subnets:
 - zone2: 10.97.1.0/24
 - zone3: 10.97.2.0/24
 
-The actual routing and Layer 2 relationships between these networks must
-be verified.
+Initial network validation confirms that each zone uses a separate
+Layer 2 Linux bridge and /24 subnet. The Multipass host routes traffic
+between these networks. Cross-zone ICMP and TCP/HTTP connectivity have
+been demonstrated.
+
+These are routed network segments, not a shared Layer 2 broadcast domain.
 
 ## Decision
 
@@ -112,16 +116,18 @@ Trade-offs:
 
 Before approving the final implementation:
 
-1. Inspect all Multipass zone interfaces and routes.
-2. Verify VM-to-VM connectivity within and between zones.
-3. Determine whether the zones share a Layer 2 broadcast domain.
-4. Test the proposed VIP mechanism.
-5. Verify API endpoint reachability and failover.
-6. Verify etcd peer connectivity.
-7. Validate Cilium pod networking.
-8. Validate Kubernetes Service routing.
-9. Test NetworkPolicy enforcement.
-10. Record observed packet paths and failure behaviour.
+1. **Complete:** Inspect Multipass zone interfaces, bridges and routes.
+2. **Complete:** Verify cross-zone ICMP connectivity.
+3. **Complete:** Verify cross-zone TCP/HTTP connectivity from zone1 and
+   zone3 to a test HTTP server in zone2.
+4. **Complete:** Confirm that zones use separate Layer 2 bridges and
+   that the host routes between their subnets.
+5. **Pending:** Test the proposed VIP mechanism and its failure behaviour.
+6. **Pending:** Verify API endpoint reachability and control-plane failover.
+7. **Pending:** Verify etcd peer connectivity.
+8. **Pending:** Validate Cilium pod networking.
+9. **Pending:** Validate Kubernetes Service routing.
+10. **Pending:** Test NetworkPolicy enforcement and record packet paths.
 
 ## Limitations
 
@@ -129,3 +135,31 @@ All zones share one physical host.
 
 Network segmentation in this lab is not equivalent to independent
 physical availability zones or cloud network failure domains.
+
+
+## Observed network validation
+
+Test environment:
+
+| Zone | Subnet | Test VM | Address |
+|---|---|---|---|
+| zone1 | 10.97.0.0/24 | netcheck-z1 | 10.97.0.200 |
+| zone2 | 10.97.1.0/24 | netcheck-z2 | 10.97.1.22 |
+| zone3 | 10.97.2.0/24 | netcheck-z3 | 10.97.2.181 |
+
+The test VMs use their respective zone gateway addresses:
+10.97.0.1, 10.97.1.1 and 10.97.2.1.
+
+A Python HTTP server was started on netcheck-z2, listening on
+0.0.0.0:8080. Requests from netcheck-z1 and netcheck-z3 both completed
+successfully and returned HTTP 200.
+
+Observed route behaviour from zone1 to zone2 uses the zone1 gateway
+(10.97.0.1), rather than direct Layer 2 neighbour resolution of the
+zone2 VM. The Multipass host has IPv4 forwarding enabled.
+
+This validates routed cross-zone application connectivity in the
+current lab configuration. It does not establish independent zone
+failure domains, production-grade firewall controls, or VIP failover.
+
+The host remains a shared routing and physical failure dependency.
