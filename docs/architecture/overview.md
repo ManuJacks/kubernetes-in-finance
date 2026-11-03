@@ -119,3 +119,25 @@ Document and validate:
 4. What logs should be retained, and for how long?
 5. Where should backups reside to provide meaningful separation from the
    Kubernetes cluster?
+
+## 11. AI-assisted engineering governance
+
+AI tools may assist with architecture analysis, implementation, troubleshooting,
+testing and documentation. They do not replace engineering accountability,
+architectural decision authority or independent validation.
+
+AI-generated recommendations must be checked against the documented project
+objectives, current implementation, approved Architecture Decision Records
+and established constraints. Conflicts with approved decisions must be
+identified and raised rather than silently introducing a change in direction.
+
+Material architectural changes, scope changes, security decisions and
+destructive or production-impacting actions require human authorization.
+
+The governing principle is:
+
+**AI proposes. Evidence challenges. Humans authorize. Automation executes.
+Validation confirms.**
+
+See the [AI Engineering Governance](../ai-engineering/AI_ENGINEERING_GOVERNANCE.md)
+document for the detailed controls and responsibilities.

@@ -5,7 +5,7 @@
 |---|---|
 | Project | Kubernetes in Finance |
 | Repository | kubernetes-in-finance |
-| Document version | 0.1 |
+| Document version | 0.2 |
 | Status | Initial |
 | Project type | Open reference architecture and engineering research |
 
@@ -19,7 +19,9 @@ The project will demonstrate more than Kubernetes deployment. It will cover
 the engineering, security, governance and operational disciplines necessary
 to operate an enterprise platform responsibly.
 
-The architecture will be vendor-aware but not vendor-locked.
+The architecture will be vendor-aware but not vendor-locked, with explicit
+architectural decisions, documented trade-offs, repeatable automation and
+verifiable evidence.
 
 ## 2. Intended audience
 
@@ -31,7 +33,8 @@ The architecture will be vendor-aware but not vendor-locked.
 
 ## 3. Objectives
 
-1. Design and demonstrate highly available Kubernetes infrastructure.
+1. Design and demonstrate highly available Kubernetes infrastructure across
+   simulated failure domains.
 2. Automate infrastructure provisioning and operating-system configuration.
 3. Establish practical security controls and validation procedures.
 4. Implement controlled CI/CD and GitOps delivery.
@@ -40,7 +43,8 @@ The architecture will be vendor-aware but not vendor-locked.
 7. Demonstrate backup, restoration and disaster recovery.
 8. Establish measurable acceptance criteria and retain validation evidence.
 9. Publish reusable architecture documentation and operational guidance.
-10. Evaluate the capabilities and limitations of AI-assisted engineering.
+10. Evaluate AI-assisted and increasingly autonomous engineering under
+    human governance.
 
 ## 4. Architectural workstreams
 
@@ -87,7 +91,9 @@ The architecture will be vendor-aware but not vendor-locked.
 - Automated validation and troubleshooting.
 - Documentation and change-record preparation.
 - Independent review of AI-generated work.
-- Evaluation of AI's ability to identify valuable next initiatives.
+- Evaluation of AI's ability to identify valuable next initiatives without
+  being assigned a specific implementation task.
+- Recording AI performance, failures and human intervention requirements.
 
 ## 5. Initial technology direction
 
@@ -117,8 +123,8 @@ automatically approved simply because they appear in this list.
 
 Significant changes must have:
 
-- An identifiable owner and justification.
-- Documented scope and impact.
+- An identifiable owner and business justification.
+- Documented scope and impact assessment.
 - Risk assessment and appropriate authorization.
 - A tested implementation plan.
 - A backout or recovery plan.
@@ -128,28 +134,89 @@ Significant changes must have:
 AI-generated changes are subject to the same controls. An AI agent cannot
 approve its own work or independently authorize governed production changes.
 
-## 7. Documentation
 
-Documentation is a deliverable throughout the engineering lifecycle.
+## 7. Observability and operational principles
 
-Significant capabilities require architecture diagrams, ADRs, security
-considerations, operational procedures, failure scenarios, acceptance
-criteria and validation evidence.
+The platform must provide actionable operational visibility from the
+beginning.
 
-## 8. Acceptance
+The initial observability capability will establish:
+
+- Infrastructure and Kubernetes health metrics.
+- Workload availability and resource utilization.
+- API server and control-plane health.
+- Network and service connectivity indicators.
+- Alert severity, routing and ownership.
+- Dashboards for operational and architectural health.
+- Runbooks linked to actionable alerts.
+- Tests that deliberately trigger failures and verify detection.
+
+Observability acceptance will include detection time, notification delivery,
+alert quality and recovery verification.
+
+Monitoring availability and resource consumption must also be measured.
+Monitoring components may initially share the same physical failure domain
+as the platform they observe.
+
+Centralized logging and retention requirements remain subject to an
+architecture decision.
+
+## 8. Documentation requirements
+
+Documentation is a deliverable throughout the engineering lifecycle and
+must be developed alongside implementation, not retrospectively.
+
+Significant capabilities require:
+
+- Architecture diagrams.
+- Architecture Decision Records (ADRs).
+- Alternatives and trade-offs.
+- Security considerations.
+- Operational procedures.
+- Failure and recovery scenarios.
+- Acceptance criteria.
+- Validation evidence.
+- Known limitations.
+
+## 9. Acceptance principles
 
 Infrastructure deployment alone does not constitute project completion.
 
-Capabilities must be tested and demonstrated. Claims must distinguish
-between implemented, simulated, planned and externally dependent controls.
+Each capability must be demonstrated, tested and documented. Claims must
+distinguish between implemented, simulated, planned and externally
+dependent controls.
 
-Multipass zones on one physical host represent simulated failure domains.
-They do not provide independent physical or cloud availability zones.
+A single physical host cannot demonstrate genuine independent physical
+availability zones. Multipass zones will be treated as simulated failure
+domains, with that limitation explicitly documented.
 
 The project will not claim regulatory compliance, certification or
 production readiness merely because selected controls have been implemented.
 
-## 9. Definition of success
+## 10. AI engineering research
+
+The project will evaluate AI's ability to:
+
+- Interpret architectural requirements.
+- Propose and defend design decisions.
+- Implement authorized infrastructure changes.
+- Validate and troubleshoot implementations.
+- Identify security and operational risks.
+- Produce accurate documentation and change records.
+- Discover valuable next initiatives without being assigned a specific
+  implementation task.
+
+AI performance, failures, intervention requirements and independently
+proposed initiatives will be recorded.
+
+Human authorization and accountability remain mandatory. AI autonomy is
+a research objective, not permission to bypass project governance.
+
+See
+[AI Engineering Governance](docs/ai-engineering/AI_ENGINEERING_GOVERNANCE.md)
+for the detailed controls and responsibilities.
+
+## 11. Definition of success
 
 A reproducible, publicly accessible and technically defensible reference
 architecture that demonstrates enterprise platform engineering, operational

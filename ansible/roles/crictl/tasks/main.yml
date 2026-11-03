@@ -1,0 +1,53 @@
+---
+- name: Create crictl download directory
+  ansible.builtin.file:
+    path: "{{ crictl_download_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Download crictl archive with checksum verification
+  ansible.builtin.get_url:
+    url: "{{ crictl_download_url }}"
+    dest: "{{ crictl_download_dir }}/crictl-{{ crictl_version }}-linux-{{ crictl_arch }}.tar.gz"
+    checksum: "{{ crictl_archive_checksum }}"
+    timeout: 60
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Extract crictl binary
+  ansible.builtin.unarchive:
+    src: "{{ crictl_download_dir }}/crictl-{{ crictl_version }}-linux-{{ crictl_arch }}.tar.gz"
+    dest: /usr/local/bin
+    remote_src: true
+    creates: "{{ crictl_install_path }}"
+
+- name: Configure crictl to use containerd
+  ansible.builtin.copy:
+    dest: /etc/crictl.yaml
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      runtime-endpoint: unix:///run/containerd/containerd.sock
+      image-endpoint: unix:///run/containerd/containerd.sock
+      timeout: 10
+      debug: false
+
+- name: Verify crictl version
+  ansible.builtin.command:
+    cmd: "{{ crictl_install_path }} --version"
+  register: crictl_version_output
+  changed_when: false
+
+- name: Display crictl version
+  ansible.builtin.debug:
+    var: crictl_version_output.stdout
+
+- name: Verify CRI runtime connectivity
+  ansible.builtin.command:
+    cmd: "{{ crictl_install_path }} info"
+  register: crictl_info
+  changed_when: false

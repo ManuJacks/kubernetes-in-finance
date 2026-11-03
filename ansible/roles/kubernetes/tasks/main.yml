@@ -1,0 +1,83 @@
+---
+- name: Create APT keyrings directory
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Download Kubernetes repository signing key
+  ansible.builtin.get_url:
+    url: "{{ kubernetes_apt_key_url }}"
+    dest: /tmp/kubernetes-release.key
+    owner: root
+    group: root
+    mode: "0644"
+    timeout: 60
+
+- name: Convert Kubernetes signing key to keyring
+  ansible.builtin.command:
+    cmd: "gpg --dearmor --yes --output {{ kubernetes_apt_keyring }} /tmp/kubernetes-release.key"
+  args:
+    creates: "{{ kubernetes_apt_keyring }}"
+
+- name: Set Kubernetes keyring permissions
+  ansible.builtin.file:
+    path: "{{ kubernetes_apt_keyring }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Configure Kubernetes APT repository
+  ansible.builtin.copy:
+    dest: "{{ kubernetes_apt_repo_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      deb [signed-by={{ kubernetes_apt_keyring }}] {{ kubernetes_apt_repo_url }} /
+
+- name: Refresh APT package cache
+  ansible.builtin.apt:
+    update_cache: true
+
+- name: Install pinned Kubernetes packages
+  ansible.builtin.apt:
+    name: "{{ item }}={{ kubernetes_package_version }}"
+    state: present
+    update_cache: false
+  loop: "{{ kubernetes_packages }}"
+
+- name: Hold Kubernetes packages at the pinned version
+  ansible.builtin.dpkg_selections:
+    name: "{{ item }}"
+    selection: hold
+  loop: "{{ kubernetes_packages }}"
+
+- name: Enable and start kubelet
+  ansible.builtin.systemd_service:
+    name: kubelet
+    enabled: true
+    state: started
+
+- name: Verify kubeadm version
+  ansible.builtin.command:
+    cmd: kubeadm version -o short
+  register: kubeadm_version_output
+  changed_when: false
+  failed_when: kubeadm_version_output.stdout != "v{{ kubernetes_version }}"
+
+- name: Verify kubelet version
+  ansible.builtin.command:
+    cmd: kubelet --version
+  register: kubelet_version_output
+  changed_when: false
+  failed_when: "'v' ~ kubernetes_version not in kubelet_version_output.stdout"
+
+- name: Verify kubectl version
+  ansible.builtin.command:
+    cmd: kubectl version --client -o json
+  register: kubectl_version_output
+  changed_when: false
+  failed_when: "'v' ~ kubernetes_version not in kubectl_version_output.stdout"

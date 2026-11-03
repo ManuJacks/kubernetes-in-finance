@@ -1,0 +1,15 @@
+---
+- name: Prepare Kubernetes nodes
+  hosts: kubernetes
+  become: true
+  gather_facts: true
+
+  vars_files:
+    - ../group_vars/all.yml
+
+  roles:
+    - common
+    - containerd
+    - crictl
+    - kubernetes
+    - etcd-tools

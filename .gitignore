@@ -1,0 +1,39 @@
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.plan
+*.tfvars
+*.tfvars.json
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Ansible
+**/*.retry
+**/vault-password*
+**/*vault_pass*
+
+# Credentials and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+id_ecdsa
+secrets.yml
+secrets.yaml
+
+# Editor and operating system
+.DS_Store
+*~
+
+# Local Ansible inventory
+ansible/inventory/hosts.yml

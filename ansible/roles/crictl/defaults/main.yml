@@ -1,0 +1,7 @@
+---
+crictl_version: "v1.37.0"
+crictl_arch: "amd64"
+crictl_install_path: "/usr/local/bin/crictl"
+crictl_download_url: "https://github.com/kubernetes-sigs/cri-tools/releases/download/{{ crictl_version }}/crictl-{{ crictl_version }}-linux-{{ crictl_arch }}.tar.gz"
+crictl_download_dir: "/tmp/crictl-install"
+crictl_archive_checksum: "sha256:67c983ee8a6bbce73d39a186e633c5fe4f8a70e62171ac3bd92a9c1b2c601670"

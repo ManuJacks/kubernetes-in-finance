@@ -1,0 +1,12 @@
+---
+kubernetes_apt_keyring: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+kubernetes_apt_repo_file: /etc/apt/sources.list.d/kubernetes.list
+kubernetes_apt_repo_url: "https://pkgs.k8s.io/core:/stable:/{{ kubernetes_minor }}/deb/"
+kubernetes_apt_key_url: "https://pkgs.k8s.io/core:/stable:/{{ kubernetes_minor }}/deb/Release.key"
+
+kubernetes_package_version: "{{ kubernetes_version }}-1.1"
+
+kubernetes_packages:
+  - kubelet
+  - kubeadm
+  - kubectl

@@ -1,0 +1,63 @@
+---
+- name: Create etcd tools download directory
+  ansible.builtin.file:
+    path: "{{ etcd_tools_download_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Download etcd release archive with checksum verification
+  ansible.builtin.get_url:
+    url: "{{ etcd_tools_download_url }}"
+    dest: "{{ etcd_tools_download_dir }}/{{ etcd_tools_archive }}"
+    checksum: "{{ etcd_tools_checksum }}"
+    owner: root
+    group: root
+    mode: "0644"
+    timeout: 60
+
+- name: Extract etcd release archive
+  ansible.builtin.unarchive:
+    src: "{{ etcd_tools_download_dir }}/{{ etcd_tools_archive }}"
+    dest: "{{ etcd_tools_download_dir }}"
+    remote_src: true
+    creates: "{{ etcd_tools_download_dir }}/etcd-v{{ etcd_tools_version }}-linux-{{ etcd_tools_arch }}/etcdctl"
+
+- name: Install etcdctl
+  ansible.builtin.copy:
+    src: "{{ etcd_tools_download_dir }}/etcd-v{{ etcd_tools_version }}-linux-{{ etcd_tools_arch }}/etcdctl"
+    dest: "{{ etcd_tools_install_dir }}/etcdctl"
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install etcdutl
+  ansible.builtin.copy:
+    src: "{{ etcd_tools_download_dir }}/etcd-v{{ etcd_tools_version }}-linux-{{ etcd_tools_arch }}/etcdutl"
+    dest: "{{ etcd_tools_install_dir }}/etcdutl"
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Verify etcdctl version
+  ansible.builtin.command:
+    cmd: etcdctl version
+  register: etcdctl_version_output
+  changed_when: false
+  failed_when: "'etcdctl version: 3.7.0' not in etcdctl_version_output.stdout"
+
+- name: Verify etcdutl version
+  ansible.builtin.command:
+    cmd: etcdutl version
+  register: etcdutl_version_output
+  changed_when: false
+  failed_when: "'etcdutl version: 3.7.0' not in etcdutl_version_output.stdout"
+
+- name: Display etcd tools versions
+  ansible.builtin.debug:
+    msg:
+      - "{{ etcdctl_version_output.stdout }}"
+      - "{{ etcdutl_version_output.stdout }}"

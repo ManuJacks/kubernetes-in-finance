@@ -1,0 +1,11 @@
+---
+# Kubernetes release pin
+kubernetes_version: "1.37.1"
+kubernetes_minor: "v1.37"
+
+# Container runtime release pin
+containerd_version: "2.3.7"
+
+# All current lab nodes are x86_64
+kubernetes_arch: "amd64"
+containerd_arch: "amd64"

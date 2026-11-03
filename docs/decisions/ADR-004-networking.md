@@ -1,6 +1,6 @@
 # ADR-004: Kubernetes and Infrastructure Networking
 
-- **Status:** Proposed
+- **Status:** Proposed — infrastructure VIP mechanism validated; Kubernetes API path pending
 - **Date:** 2026-11-02
 
 ## Context
@@ -8,73 +8,76 @@
 The platform requires connectivity between virtual machines, Kubernetes
 control-plane nodes, worker nodes, pods, services and external clients.
 
-Networking must support a highly available Kubernetes API endpoint,
-cross-node workload communication, service discovery and network security.
-
-Multipass currently exposes three separate zone subnets:
+Multipass provides three separate routed zone networks:
 
 - zone1: 10.97.0.0/24
 - zone2: 10.97.1.0/24
 - zone3: 10.97.2.0/24
 
-Initial network validation confirms that each zone uses a separate
-Layer 2 Linux bridge and /24 subnet. The Multipass host routes traffic
-between these networks. Cross-zone ICMP and TCP/HTTP connectivity have
-been demonstrated.
-
-These are routed network segments, not a shared Layer 2 broadcast domain.
+Cross-zone ICMP and TCP/HTTP connectivity have been demonstrated.
+Each zone uses a separate Layer 2 bridge, with the host routing between
+the subnets. These networks are not a shared Layer 2 broadcast domain.
 
 ## Decision
 
-Cilium is the proposed Kubernetes CNI.
+Cilium remains the proposed Kubernetes CNI.
 
-The design separates four networking responsibilities:
+Networking responsibilities are separated into:
 
-1. Infrastructure networking: Multipass virtual networks and host routing.
-2. Kubernetes control-plane networking: API server endpoint and etcd
-   communication.
-3. Pod networking: Cilium-managed pod connectivity and network policy.
+1. Infrastructure networking: Multipass networks and host routing.
+2. API endpoint networking: dedicated HAProxy and Keepalived load balancers.
+3. Pod networking: proposed Cilium-managed connectivity and network policy.
 4. Service networking: Kubernetes Service virtual IPs and traffic routing.
 
-## Control-plane endpoint
+## Control-plane endpoint and load balancers
 
-The intended design requires a stable Kubernetes API endpoint.
+The design uses a dedicated load-balancer pair connected to a separate
+frontend network.
 
-HAProxy is the proposed API load balancer.
+| Component | Address |
+|---|---|
+| Frontend bridge | br-api-frontend |
+| Frontend subnet | 10.97.3.0/24 |
+| LB1 frontend | 10.97.3.11 |
+| LB2 frontend | 10.97.3.12 |
+| API virtual IP | 10.97.3.100 |
 
-Keepalived is a candidate for providing a virtual IP through failover.
+Keepalived 2.3.4 provides VRRPv3 virtual IP failover between the two
+load balancers.
 
-However, the VIP mechanism is not yet approved.
+**Validated:** VRRP and ARP behaviour on the frontend bridge. The VIP
+successfully moved to LB2 when Keepalived stopped on LB1, then returned
+to LB1 when its Keepalived service restarted.
 
-The separate Multipass zone subnets may prevent a conventional shared
-Layer 2 VRRP arrangement from working across all three control-plane nodes.
+**Not yet validated:** HAProxy configuration, API server health checks,
+Kubernetes API reachability through the VIP, and control-plane failure
+and recovery.
 
-We will validate the available network capabilities before selecting
-the final VIP architecture.
+The intended Kubernetes controlPlaneEndpoint is 10.97.3.100:6443.
+
+The VIP is hosted by the dedicated load-balancer pair, not by the
+control-plane nodes.
 
 ## Cilium
 
-Cilium will provide:
+Cilium remains the proposed CNI and is expected to provide:
 
 - Pod addressing and cross-node connectivity.
 - Kubernetes network policy enforcement.
-- Visibility into network flows.
+- Network flow visibility.
 - Optional eBPF-based service handling, subject to a separate decision.
 
-Kube-proxy replacement will not be enabled by default.
-
-It must be justified and validated independently.
+Kube-proxy replacement will not be enabled by default. It requires
+independent justification and validation.
 
 ## Required connectivity
 
 The architecture must account for:
 
-- Control-plane to control-plane communication.
-- etcd peer and client communication.
+- Control-plane and etcd communication.
 - Control-plane to worker communication.
 - Worker-to-worker communication.
-- Pod-to-pod communication.
-- Pod-to-Service communication.
+- Pod-to-pod and pod-to-Service communication.
 - DNS resolution.
 - Administrator access to the Kubernetes API.
 - External access to selected application services.
@@ -85,81 +88,66 @@ Firewall and routing requirements must be documented.
 
 ### Flannel
 
-A simpler CNI, but offers fewer integrated network policy and
-observability capabilities than the proposed Cilium design.
+Simpler, but offers fewer integrated network policy and observability
+capabilities than the proposed Cilium design.
 
 ### Calico
 
 A capable alternative with mature routing and network policy features.
-Retained as a valid alternative if Cilium resource or networking
-constraints become problematic.
+Retained if Cilium resource or networking constraints become problematic.
 
 ### Cloud-managed networking
 
 Not selected for the local implementation because the project must
-demonstrate the underlying networking responsibilities.
+demonstrate underlying networking responsibilities.
 
 ## Consequences
 
 Positive:
 - Clear separation of networking layers.
-- Network policy and flow observability.
-- Opportunity to evaluate eBPF-based networking.
+- Dedicated API load-balancer redundancy.
+- Network policy and flow observability through the proposed CNI.
 - Practical troubleshooting across infrastructure and Kubernetes layers.
 
 Trade-offs:
 - Additional resource consumption.
 - More complex troubleshooting.
 - Local virtual network behaviour may differ from cloud networking.
+- The frontend bridge and load balancers remain dependencies.
 
 ## Validation
 
-Before approving the final implementation:
-
 1. **Complete:** Inspect Multipass zone interfaces, bridges and routes.
 2. **Complete:** Verify cross-zone ICMP connectivity.
-3. **Complete:** Verify cross-zone TCP/HTTP connectivity from zone1 and
-   zone3 to a test HTTP server in zone2.
-4. **Complete:** Confirm that zones use separate Layer 2 bridges and
-   that the host routes between their subnets.
-5. **Pending:** Test the proposed VIP mechanism and its failure behaviour.
-6. **Pending:** Verify API endpoint reachability and control-plane failover.
-7. **Pending:** Verify etcd peer connectivity.
-8. **Pending:** Validate Cilium pod networking.
-9. **Pending:** Validate Kubernetes Service routing.
-10. **Pending:** Test NetworkPolicy enforcement and record packet paths.
+3. **Complete:** Verify cross-zone TCP/HTTP connectivity.
+4. **Complete:** Confirm separate zone Layer 2 bridges and host routing.
+5. **Complete:** Validate frontend bridge VRRP and ARP behaviour.
+6. **Complete:** Test VIP failover and recovery between dedicated load balancers.
+7. **Pending:** Install and configure HAProxy.
+8. **Pending:** Verify API server health checks and API reachability through the VIP.
+9. **Pending:** Test control-plane and etcd connectivity and failure behaviour.
+10. **Pending:** Validate Cilium pod networking and Kubernetes Service routing.
+11. **Pending:** Test NetworkPolicy enforcement and record packet paths.
 
 ## Limitations
 
-All zones share one physical host.
+All zones and load balancers share one physical host.
+Network segmentation does not provide independent physical availability
+zones or cloud network failure domains.
 
-Network segmentation in this lab is not equivalent to independent
-physical availability zones or cloud network failure domains.
-
+The successful VIP test demonstrates load-balancer address failover,
+not end-to-end Kubernetes API high availability.
 
 ## Observed network validation
 
-Test environment:
+Cross-zone tests used dedicated test VMs in each zone. A Python HTTP
+server on netcheck-z2 (10.97.1.22:8080) returned HTTP 200 to requests
+from zone1 and zone3.
 
-| Zone | Subnet | Test VM | Address |
-|---|---|---|---|
-| zone1 | 10.97.0.0/24 | netcheck-z1 | 10.97.0.200 |
-| zone2 | 10.97.1.0/24 | netcheck-z2 | 10.97.1.22 |
-| zone3 | 10.97.2.0/24 | netcheck-z3 | 10.97.2.181 |
+Traffic from zone1 to zone2 used the zone1 gateway (10.97.0.1), rather
+than direct Layer 2 neighbour resolution. The Multipass host has IPv4
+forwarding enabled.
 
-The test VMs use their respective zone gateway addresses:
-10.97.0.1, 10.97.1.1 and 10.97.2.1.
-
-A Python HTTP server was started on netcheck-z2, listening on
-0.0.0.0:8080. Requests from netcheck-z1 and netcheck-z3 both completed
-successfully and returned HTTP 200.
-
-Observed route behaviour from zone1 to zone2 uses the zone1 gateway
-(10.97.0.1), rather than direct Layer 2 neighbour resolution of the
-zone2 VM. The Multipass host has IPv4 forwarding enabled.
-
-This validates routed cross-zone application connectivity in the
-current lab configuration. It does not establish independent zone
-failure domains, production-grade firewall controls, or VIP failover.
-
-The host remains a shared routing and physical failure dependency.
+This demonstrates routed cross-zone application connectivity in the
+current lab configuration. It does not establish production-grade
+firewall controls or independent zone failure domains.

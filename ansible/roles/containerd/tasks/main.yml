@@ -1,0 +1,122 @@
+---
+- name: Create containerd installation directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - "{{ containerd_download_dir }}"
+    - "{{ containerd_config_dir }}"
+    - "{{ cni_install_dir }}"
+    - /etc/cni/net.d
+
+- name: Download containerd archive
+  ansible.builtin.get_url:
+    url: "{{ containerd_download_url }}"
+    dest: "{{ containerd_download_dir }}/{{ containerd_archive_name }}"
+    checksum: "{{ containerd_archive_checksum }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Extract containerd binaries
+  ansible.builtin.unarchive:
+    src: "{{ containerd_download_dir }}/{{ containerd_archive_name }}"
+    dest: "{{ containerd_install_dir }}"
+    remote_src: true
+    creates: "/usr/local/.containerd-{{ containerd_version }}-installed"
+
+- name: Record installed containerd version
+  ansible.builtin.file:
+    path: "/usr/local/.containerd-{{ containerd_version }}-installed"
+    state: touch
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Download runc binary
+  ansible.builtin.get_url:
+    url: "{{ runc_download_url }}"
+    dest: "{{ runc_install_path }}"
+    checksum: "{{ runc_checksum }}"
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Download CNI plugins archive
+  ansible.builtin.get_url:
+    url: "{{ cni_plugins_download_url }}"
+    dest: "{{ containerd_download_dir }}/{{ cni_plugins_archive }}"
+    checksum: "{{ cni_plugins_checksum }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Extract CNI plugin binaries
+  ansible.builtin.unarchive:
+    src: "{{ containerd_download_dir }}/{{ cni_plugins_archive }}"
+    dest: "{{ cni_install_dir }}"
+    remote_src: true
+    creates: "{{ cni_install_dir }}/loopback"
+
+- name: Install containerd systemd service
+  ansible.builtin.get_url:
+    url: "{{ containerd_service_url }}"
+    dest: /etc/systemd/system/containerd.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart containerd
+
+- name: Deploy containerd configuration
+  ansible.builtin.template:
+    src: config.toml.j2
+    dest: "{{ containerd_config_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart containerd
+
+- name: Apply pending containerd service changes
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start containerd
+  ansible.builtin.systemd_service:
+    name: containerd
+    enabled: true
+    state: started
+
+- name: Verify containerd version
+  ansible.builtin.command:
+    cmd: containerd --version
+  register: containerd_version_output
+  changed_when: false
+
+- name: Display containerd version
+  ansible.builtin.debug:
+    var: containerd_version_output.stdout
+
+- name: Verify CRI plugins are loaded
+  ansible.builtin.command:
+    cmd: ctr plugins ls
+  register: containerd_plugins
+  changed_when: false
+  failed_when: >
+    containerd_plugins.rc != 0 or
+    'io.containerd.cri.v1' not in containerd_plugins.stdout or
+    'runtime' not in containerd_plugins.stdout or
+    'images' not in containerd_plugins.stdout
+
+- name: Verify containerd CRI socket exists
+  ansible.builtin.stat:
+    path: "{{ containerd_cri_socket }}"
+  register: containerd_socket
+
+- name: Assert containerd CRI socket exists
+  ansible.builtin.assert:
+    that:
+      - containerd_socket.stat.exists
+      - containerd_socket.stat.issock
+    fail_msg: "Containerd CRI socket is missing or is not a socket."

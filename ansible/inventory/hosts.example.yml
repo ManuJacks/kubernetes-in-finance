@@ -1,0 +1,24 @@
+all:
+  vars:
+    ansible_user: ubuntu
+    ansible_ssh_private_key_file: ~/.ssh/id_ed25519_k8s_finance_ansible
+    ansible_become: true
+  children:
+    control_plane:
+      hosts:
+        tf-ha-control1:
+          ansible_host: 192.0.2.11
+        tf-ha-control2:
+          ansible_host: 192.0.2.12
+        tf-ha-control3:
+          ansible_host: 192.0.2.13
+    workers:
+      hosts:
+        tf-ha-worker1:
+          ansible_host: 192.0.2.21
+        tf-ha-worker2:
+          ansible_host: 192.0.2.22
+    kubernetes:
+      children:
+        control_plane:
+        workers:

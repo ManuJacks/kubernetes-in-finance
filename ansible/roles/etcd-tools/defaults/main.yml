@@ -1,0 +1,12 @@
+---
+etcd_tools_version: "3.7.0"
+etcd_tools_arch: "amd64"
+
+etcd_tools_archive: "etcd-v{{ etcd_tools_version }}-linux-{{ etcd_tools_arch }}.tar.gz"
+
+etcd_tools_download_url: "https://github.com/etcd-io/etcd/releases/download/v{{ etcd_tools_version }}/{{ etcd_tools_archive }}"
+
+etcd_tools_checksum: "sha256:b05cb07f5686dab8f9cdab89986b44f0dd24aaf5c627176aff325e21fa56f9f0"
+
+etcd_tools_download_dir: "/tmp/etcd-tools-install"
+etcd_tools_install_dir: "/usr/local/bin"
