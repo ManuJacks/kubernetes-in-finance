@@ -1,0 +1,10 @@
+---
+haproxy_package_name: haproxy
+haproxy_service_name: haproxy
+haproxy_config_path: /etc/haproxy/haproxy.cfg
+
+haproxy_max_connections: 4000
+haproxy_connect_timeout: 5s
+haproxy_client_timeout: 60s
+haproxy_server_timeout: 60s
+haproxy_check_interval: 3s

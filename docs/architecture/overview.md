@@ -14,36 +14,103 @@ remain subject to validation and Architecture Decision Records.
 - 16 GB physical memory.
 - Multipass 1.17 using QEMU.
 - Three available Multipass network zones.
-- Five proposed Kubernetes virtual machines.
+- Five Kubernetes virtual machines.
+- Two existing load-balancer virtual machines.
 
 All VMs share one physical failure domain. Multipass zones simulate
 infrastructure separation; they are not independent physical availability
 zones.
 
-## 3. Proposed Kubernetes topology
+The load balancers have two network interfaces:
 
-| Node | Role | Proposed zone |
-|---|---|---|
-| ha-control1 | Control plane / etcd | zone1 |
-| ha-control2 | Control plane / etcd | zone2 |
-| ha-control3 | Control plane / etcd | zone3 |
-| ha-worker1 | Application workloads | zone1 |
-| ha-worker2 | Application workloads | zone2 |
+- Management connectivity through their respective Multipass zone networks.
+- Frontend connectivity through the shared `br-api-frontend` bridge.
 
-Initial VM memory allocation: 1.5 GB each, subject to resource testing.
+The frontend network uses subnet `10.97.3.0/24`. The API virtual IP is
+`10.97.3.100`.
+
+## 3. Kubernetes and load-balancer topology
+
+### Kubernetes nodes
+
+| Node | Role | Zone | Management IP |
+|---|---|---|---|
+| tf-ha-control1 | Control plane / etcd | zone1 | 10.97.0.16 |
+| tf-ha-control2 | Control plane / etcd | zone2 | 10.97.1.160 |
+| tf-ha-control3 | Control plane / etcd | zone3 | 10.97.2.213 |
+| tf-ha-worker1 | Application workloads | zone1 | 10.97.0.2 |
+| tf-ha-worker2 | Application workloads | zone2 | 10.97.1.111 |
+
+### Load balancers
+
+| VM | Zone | Management IP | Frontend IP | VRRP priority |
+|---|---|---|---|---|
+| api-lb1-new | zone2 | 10.97.1.141 | 10.97.3.11 | 150 |
+| api-lb2-new | zone3 | 10.97.2.242 | 10.97.3.12 | 100 |
+
+Both load balancers use Keepalived with VRRP virtual router ID 51.
+LB1 has higher priority; LB2 is configured as BACKUP.
+
+The shared API virtual IP is `10.97.3.100/24`. Keepalived dynamically
+assigns this address to the active load balancer's frontend interface.
+
+### Logical API traffic flow
+
+```mermaid
+flowchart TD
+    Client[API clients] --> VIP[API VIP 10.97.3.100:6443]
+
+    subgraph Active["Active load balancer"]
+        LB1["LB1 - api-lb1-new<br/>HAProxy + Keepalived"]
+    end
+
+    subgraph Standby["Standby load balancer"]
+        LB2["LB2 - api-lb2-new<br/>HAProxy + Keepalived"]
+    end
+
+    LB1 <-->|VRRP advertisements| LB2
+
+    VIP --> LB1
+    LB1 --> CP1["tf-ha-control1:6443"]
+    LB1 --> CP2["tf-ha-control2:6443"]
+    LB1 --> CP3["tf-ha-control3:6443"]
+
+    LB2 -. "Acquires VIP on failover" .-> VIP
+    LB2 -. "Standby configuration" .-> CP1
+    LB2 -. "Standby configuration" .-> CP2
+    LB2 -. "Standby configuration" .-> CP3
+```
 
 ## 4. Control-plane architecture
 
-The proposed design includes:
+The design includes:
 
 - Three control-plane nodes.
 - Three stacked etcd members.
-- HAProxy for Kubernetes API load balancing.
-- Keepalived for API endpoint virtual IP failover.
-- A stable Kubernetes controlPlaneEndpoint.
+- Two HAProxy instances configured for Kubernetes API TCP forwarding.
+- Keepalived managing API endpoint VIP ownership through VRRP.
+- A stable Kubernetes `controlPlaneEndpoint` using the API VIP.
 
-The VIP design is not yet approved. Multipass zones have separate subnets,
-so VRRP and VIP failover behaviour must be investigated before selection.
+### Implementation and validation status
+
+The following infrastructure components have been configured:
+
+- Two existing load-balancer VMs across zone2 and zone3.
+- HAProxy configuration deployed through Ansible.
+- Keepalived configuration deployed through Ansible.
+- `net.ipv4.ip_nonlocal_bind` enabled to allow HAProxy to bind the VIP
+  when the local node does not currently own it.
+- VRRP failover demonstrated by stopping Keepalived on LB1 and observing
+  LB2 acquire `10.97.3.100`.
+
+Kubernetes has not yet been bootstrapped. Consequently, successful
+end-to-end API traffic forwarding, control-plane health checks and
+Kubernetes API availability have not yet been demonstrated.
+
+The load-balancer VMs share a frontend network, allowing VRRP
+advertisements and VIP ownership to operate across their frontend
+interfaces. This architecture does not establish independent physical
+failure domains.
 
 ## 5. Workload networking
 

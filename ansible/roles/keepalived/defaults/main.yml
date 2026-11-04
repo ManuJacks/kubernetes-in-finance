@@ -1,0 +1,4 @@
+---
+keepalived_package_name: keepalived
+keepalived_service_name: keepalived
+keepalived_config_path: /etc/keepalived/keepalived.conf

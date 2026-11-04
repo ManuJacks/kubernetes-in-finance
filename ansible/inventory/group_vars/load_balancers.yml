@@ -1,0 +1,23 @@
+# Frontend network
+load_balancer_interface: eth1
+load_balancer_vip: 10.97.3.100
+load_balancer_vip_cidr: 24
+
+# Keepalived / VRRP
+keepalived_virtual_router_id: 51
+keepalived_vrrp_version: 3
+keepalived_advert_int: 1
+
+# HAProxy
+haproxy_frontend_port: 6443
+haproxy_backend_port: 6443
+haproxy_balance_algorithm: roundrobin
+
+# Kubernetes API backends
+kubernetes_api_servers:
+  - name: control1
+    address: 10.97.0.16
+  - name: control2
+    address: 10.97.1.160
+  - name: control3
+    address: 10.97.2.213

@@ -1,0 +1,30 @@
+---
+- name: Install HAProxy
+  ansible.builtin.apt:
+    name: "{{ haproxy_package_name }}"
+    state: present
+    update_cache: true
+
+- name: Allow binding to the floating API VIP
+  ansible.posix.sysctl:
+    name: net.ipv4.ip_nonlocal_bind
+    value: "1"
+    state: present
+    sysctl_set: true
+    reload: true
+
+- name: Deploy HAProxy configuration
+  ansible.builtin.template:
+    src: haproxy.cfg.j2
+    dest: "{{ haproxy_config_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+    validate: "haproxy -c -f %s"
+  notify: Validate and reload HAProxy
+
+- name: Enable and start HAProxy
+  ansible.builtin.service:
+    name: "{{ haproxy_service_name }}"
+    state: started
+    enabled: true

@@ -1,0 +1,19 @@
+# Managed by Ansible — do not edit manually.
+
+global_defs {
+    router_id {{ keepalived_router_id }}
+    enable_script_security
+}
+
+vrrp_instance VI_API {
+    state {{ keepalived_state }}
+    interface {{ load_balancer_interface }}
+    virtual_router_id {{ keepalived_virtual_router_id }}
+    priority {{ keepalived_priority }}
+    advert_int {{ keepalived_advert_int }}
+    version {{ keepalived_vrrp_version }}
+
+    virtual_ipaddress {
+        {{ load_balancer_vip }}/{{ load_balancer_vip_cidr }} dev {{ load_balancer_interface }}
+    }
+}

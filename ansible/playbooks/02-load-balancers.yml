@@ -1,0 +1,10 @@
+---
+- name: Configure Kubernetes API load balancers
+  hosts: load_balancers
+  become: true
+  gather_facts: true
+  serial: 1
+
+  roles:
+    - haproxy
+    - keepalived
