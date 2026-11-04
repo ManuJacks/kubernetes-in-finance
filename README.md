@@ -125,6 +125,7 @@ HAProxy and Keepalived on the existing load-balancer VMs:
 
 ```bash
 ANSIBLE_CONFIG=ansible/ansible.cfg ansible-playbook -i ansible/inventory/hosts.yml ansible/playbooks/02-load-balancers.yml
+```
 
 **Destructive operation warning:** `terraform destroy` deletes the five
 Terraform-managed VMs through the Multipass provisioning script. Review
