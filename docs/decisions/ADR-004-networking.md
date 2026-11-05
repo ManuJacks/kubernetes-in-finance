@@ -1,6 +1,6 @@
 # ADR-004: Kubernetes and Infrastructure Networking
 
-- **Status:** Proposed — infrastructure VIP mechanism validated; Kubernetes API path pending
+- **Status:** Accepted — infrastructure networking and Kubernetes API endpoint deployed; core pod networking validated; Service routing and NetworkPolicy validation pending
 - **Date:** 2026-11-02
 
 ## Context
@@ -20,14 +20,14 @@ the subnets. These networks are not a shared Layer 2 broadcast domain.
 
 ## Decision
 
-Cilium remains the proposed Kubernetes CNI.
+Cilium 1.20.4 is the deployed Kubernetes CNI.
 
 Networking responsibilities are separated into:
 
 1. Infrastructure networking: Multipass networks and host routing.
 2. API endpoint networking: dedicated HAProxy and Keepalived load balancers.
-3. Pod networking: proposed Cilium-managed connectivity and network policy.
-4. Service networking: Kubernetes Service virtual IPs and traffic routing.
+3. Pod networking: Cilium-managed connectivity and network policy.
+4. Service networking: Kubernetes Service virtual IPs and traffic routing remains the responsibility, but validation is still pending.
 
 ## Control-plane endpoint and load balancers
 
@@ -62,7 +62,7 @@ control-plane nodes.
 
 ## Cilium and kube-proxy replacement
 
-**Decision:** Cilium will provide Kubernetes pod networking,
+**Decision:** Cilium 1.20.4 provides Kubernetes pod networking,
 network policy enforcement and eBPF-based Service load balancing.
 
 kube-proxy will not be installed. Cilium will operate in
@@ -78,7 +78,7 @@ Rationale:
 
 Implementation requirements:
 
-- Pin a stable Cilium release compatible with Kubernetes 1.37.1.
+- Pin a stable Cilium release compatible with Kubernetes 1.36.6.
 - Configure kubeadm to skip the kube-proxy installation phase.
 - Configure Cilium to use the correct node interfaces and addresses.
 - Preserve API connectivity through 10.97.3.100:6443.
@@ -109,7 +109,7 @@ Firewall and routing requirements must be documented.
 ### Flannel
 
 Simpler, but offers fewer integrated network policy and observability
-capabilities than the proposed Cilium design.
+capabilities than the deployed Cilium design.
 
 ### Calico
 
@@ -126,7 +126,7 @@ demonstrate underlying networking responsibilities.
 Positive:
 - Clear separation of networking layers.
 - Dedicated API load-balancer redundancy.
-- Network policy and flow observability through the proposed CNI.
+- Network policy and flow observability through the deployed CNI.
 - Practical troubleshooting across infrastructure and Kubernetes layers.
 
 Trade-offs:
@@ -144,10 +144,16 @@ Trade-offs:
 5. **Complete:** Validate frontend bridge VRRP and ARP behaviour.
 6. **Complete:** Test VIP failover and recovery between dedicated load balancers.
 7. **Complete:** Deploy HAProxy configuration through Ansible.
-8. **Pending:** Verify API server health checks and API reachability through the VIP.
-9. **Pending:** Test control-plane and etcd connectivity and failure behaviour.
-10. **Pending:** Validate Cilium pod networking and Kubernetes Service routing.
-11. **Pending:** Test NetworkPolicy enforcement and record packet paths.
+8. **Complete:** Configure Kubernetes API access through the VIP and verify API readiness after host reboot.
+9. **Complete:** Validate control-plane and etcd peer connectivity across zones, including all three etcd endpoints committing proposals after host reboot.
+10. **Complete:** Validate Cilium pod networking and bidirectional cross-node pod HTTP connectivity.
+11. **Complete:** Validate VXLAN transport and preservation of original node source addresses.
+12. **Complete:** Deploy Ansible-managed host NAT exemption reconciliation and verify idempotency, rule ordering and persistence after host reboot.
+13. **Pending:** Validate Kubernetes Service routing.
+14. **Pending:** Validate cluster DNS resolution.
+15. **Pending:** Test NetworkPolicy enforcement and record packet paths.
+16. **Pending:** Test Cilium agent, control-plane and load-balancer failure and recovery scenarios.
+17. **Pending:** Validate Hubble flow visibility for representative pod traffic.
 
 ## Limitations
 
@@ -155,8 +161,9 @@ All zones and load balancers share one physical host.
 Network segmentation does not provide independent physical availability
 zones or cloud network failure domains.
 
-The successful VIP test demonstrates load-balancer address failover,
-not end-to-end Kubernetes API high availability.
+VIP failover and post-reboot API readiness have been validated.
+End-to-end API availability during load-balancer and control-plane
+failures remains to be tested.
 
 ## Observed network validation
 

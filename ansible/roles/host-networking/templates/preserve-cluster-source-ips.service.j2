@@ -1,0 +1,8 @@
+[Unit]
+Description=Preserve source IPs for internal Kubernetes cluster traffic
+Requires=snap.multipass.multipassd.service
+After=snap.multipass.multipassd.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/preserve-cluster-source-ips

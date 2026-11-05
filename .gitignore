@@ -37,3 +37,7 @@ secrets.yaml
 
 # Local Ansible inventory
 ansible/inventory/hosts.yml
+
+# Kubernetes credentials
+*.kubeconfig
+*.kubeconfig.*

@@ -1,0 +1,6 @@
+---
+- name: Prepare Kubernetes control-plane bootstrap
+  hosts: tf-ha-control1
+  become: true
+  roles:
+    - kubernetes-bootstrap

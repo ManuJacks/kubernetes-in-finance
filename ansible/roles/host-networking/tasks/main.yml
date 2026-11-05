@@ -1,0 +1,33 @@
+---
+- name: Install internal cluster NAT exemption script
+  ansible.builtin.template:
+    src: preserve-cluster-source-ips.sh.j2
+    dest: /usr/local/sbin/preserve-cluster-source-ips
+    owner: root
+    group: root
+    mode: "0750"
+
+- name: Install systemd service for internal cluster NAT exemption
+  ansible.builtin.template:
+    src: preserve-cluster-source-ips.service.j2
+    dest: /etc/systemd/system/preserve-cluster-source-ips.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Install systemd timer for internal cluster NAT exemption
+  ansible.builtin.template:
+    src: preserve-cluster-source-ips.timer.j2
+    dest: /etc/systemd/system/preserve-cluster-source-ips.timer
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Enable and start internal cluster NAT exemption timer
+  ansible.builtin.systemd_service:
+    name: preserve-cluster-source-ips.timer
+    enabled: true
+    state: started
+    daemon_reload: true

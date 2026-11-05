@@ -23,14 +23,31 @@ validation evidence and known limitations are documented.
 
 ## 3. Kubernetes Networking
 
-- [ ] Cilium operates on all Kubernetes nodes.
-- [ ] kube-proxy replacement is enabled and verified.
-- [ ] Pod-to-pod connectivity works across nodes.
+- [x] Cilium operates on all five Kubernetes nodes.
+- [x] kube-proxy replacement is enabled and verified.
+- [x] Pod-to-pod connectivity works across nodes in both directions.
 - [ ] Kubernetes Services route traffic correctly.
 - [ ] DNS resolution works across workloads.
 - [ ] Default-deny network policies are enforced.
 - [ ] Network failures and Cilium agent restarts are tested.
 - [ ] Hubble provides observable network flow information.
+
+**Evidence and procedures:**
+
+- `docs/decisions/ADR-004-networking.md`
+- `docs/incidents/2026-11-05-etcd-cross-zone-nat.md`
+- `docs/runbooks/network-connectivity.md`
+
+**Current limitations:**
+
+- The host NAT exemption is managed by an Ansible-installed
+  systemd service and timer. Reboot validation passed: the
+  exemption remained first in POSTROUTING and the timer
+  successfully executed the reconciliation service.
+- Kubernetes Service routing, DNS, NetworkPolicy enforcement,
+  Hubble flow visibility and failure recovery remain untested.
+- Multipass zones share one physical host and do not provide
+  independent physical failure domains.
 
 ## 4. Identity and Access Security
 
@@ -113,7 +130,28 @@ Every completed criterion must have:
 Passing an installation check alone does not establish operational
 readiness or regulatory compliance.
 
-## 12. Platform Limitations
+## 12. CI/CD and Platform Lifecycle Automation
+
+These criteria apply when GitHub Actions orchestration is implemented.
+They are not acceptance criteria for the current manual and Ansible
+implementation phase.
+
+- [ ] Pull requests run automated validation without deployment permissions.
+- [ ] Terraform changes produce a reviewable plan before approval-gated apply.
+- [ ] Infrastructure and platform deployment workflows require appropriate authorization.
+- [ ] Workflows invoke version-controlled Terraform and Ansible automation.
+- [ ] Helm chart versions and configuration are pinned and reviewable.
+- [ ] The self-hosted runner uses a dedicated restricted identity.
+- [ ] Runner network access is limited to required platform resources.
+- [ ] Deployment credentials are scoped and protected.
+- [ ] Secrets never appear in workflow logs, artifacts or source control.
+- [ ] Workflow records identify the commit, target, execution result and approval where applicable.
+- [ ] Post-deployment validation checks API health, node readiness and Cilium health.
+- [ ] Failed validation prevents promotion or reports a clear deployment failure.
+- [ ] Destructive recovery operations require explicit authorization.
+- [ ] Flux reconciliation is independently monitored and remains separate from CI/CD orchestration.
+
+## 13. Platform Limitations
 
 The initial implementation runs on a single physical host.
 

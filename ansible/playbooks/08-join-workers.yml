@@ -1,0 +1,75 @@
+---
+- name: Generate worker join credentials
+  hosts: tf-ha-control1
+  become: true
+
+  vars:
+    kubernetes_bootstrap_token_description: "ansible-worker-expansion"
+
+  tasks:
+    - name: Generate short-lived worker join token
+      ansible.builtin.command:
+        argv:
+          - kubeadm
+          - token
+          - create
+          - --ttl
+          - "30m"
+          - --description
+          - "{{ kubernetes_bootstrap_token_description }}"
+      register: kubeadm_worker_token
+      changed_when: true
+      no_log: true
+
+    - name: Calculate cluster CA discovery hash
+      ansible.builtin.shell: |
+        set -o pipefail
+        openssl x509 -pubkey \
+          -in /etc/kubernetes/pki/ca.crt -noout \
+          | openssl pkey -pubin -outform DER \
+          | sha256sum | awk '{print $1}'
+      args:
+        executable: /bin/bash
+      register: kubeadm_worker_ca_hash
+      changed_when: false
+
+- name: Join Kubernetes workers
+  hosts: workers
+  become: true
+  serial: 1
+  order: inventory
+
+  vars:
+    kubernetes_control_plane_endpoint: "10.97.3.100:6443"
+    kubernetes_cri_socket: "unix:///run/containerd/containerd.sock"
+
+  tasks:
+    - name: Check whether this worker is registered in Kubernetes
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - --kubeconfig=/etc/kubernetes/admin.conf
+          - get
+          - node
+          - "{{ inventory_hostname }}"
+      delegate_to: tf-ha-control1
+      become: true
+      register: worker_node_lookup
+      changed_when: false
+      failed_when: false
+
+    - name: Join worker to Kubernetes
+      ansible.builtin.command:
+        argv:
+          - kubeadm
+          - join
+          - "{{ kubernetes_control_plane_endpoint }}"
+          - --token
+          - "{{ hostvars['tf-ha-control1'].kubeadm_worker_token.stdout }}"
+          - --discovery-token-ca-cert-hash
+          - "sha256:{{ hostvars['tf-ha-control1'].kubeadm_worker_ca_hash.stdout }}"
+          - --cri-socket
+          - "{{ kubernetes_cri_socket }}"
+      when: worker_node_lookup.rc != 0
+      no_log: true
+      register: worker_join

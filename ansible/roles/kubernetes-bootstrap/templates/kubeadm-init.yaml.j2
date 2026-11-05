@@ -1,0 +1,21 @@
+---
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: InitConfiguration
+localAPIEndpoint:
+  advertiseAddress: 10.97.0.16
+  bindPort: 6443
+nodeRegistration:
+  criSocket: unix:///run/containerd/containerd.sock
+skipPhases:
+  - addon/kube-proxy
+---
+apiVersion: kubeadm.k8s.io/v1beta4
+kind: ClusterConfiguration
+kubernetesVersion: v1.36.6
+controlPlaneEndpoint: "10.97.3.100:6443"
+networking:
+  podSubnet: 10.244.0.0/16
+  serviceSubnet: 10.112.0.0/12
+apiServer:
+  certSANs:
+    - 10.97.3.100

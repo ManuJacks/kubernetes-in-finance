@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+IPTABLES="/usr/sbin/iptables"
+
+RULE=(
+  -s "10.97.0.0/16"
+  -d "10.97.0.0/16"
+  -j ACCEPT
+)
+
+EXPECTED="-A POSTROUTING -s 10.97.0.0/16 -d 10.97.0.0/16 -j ACCEPT"
+
+FIRST_RULE=$(
+  "$IPTABLES" -t nat -S POSTROUTING |
+    awk '$1 == "-A" && $2 == "POSTROUTING" { print; exit }'
+)
+
+if [[ "$FIRST_RULE" != "$EXPECTED" ]]; then
+  while "$IPTABLES" -t nat -C POSTROUTING "${RULE[@]}" 2>/dev/null; do
+    "$IPTABLES" -t nat -D POSTROUTING "${RULE[@]}"
+  done
+
+  "$IPTABLES" -t nat -I POSTROUTING 1 "${RULE[@]}"
+fi

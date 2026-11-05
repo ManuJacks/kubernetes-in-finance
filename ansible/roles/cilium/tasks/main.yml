@@ -1,0 +1,39 @@
+---
+- name: Add the Cilium Helm repository
+  kubernetes.core.helm_repository:
+    name: "{{ cilium_helm_repo_name }}"
+    repo_url: "{{ cilium_helm_repo_url }}"
+    state: present
+
+- name: Install Cilium CNI
+  kubernetes.core.helm:
+    name: cilium
+    chart_ref: "{{ cilium_helm_repo_name }}/cilium"
+    chart_version: "{{ cilium_version }}"
+    release_namespace: "{{ cilium_namespace }}"
+    create_namespace: false
+    kubeconfig: "{{ lookup('env', 'HOME') }}/.kube/kubernetes-in-finance.conf"
+    state: present
+    wait: true
+    wait_timeout: "10m"
+    values:
+      ipam:
+        mode: "{{ cilium_ipam_mode }}"
+
+      kubeProxyReplacement: "{{ cilium_kube_proxy_replacement | string | lower }}"
+
+      routingMode: "{{ cilium_routing_mode }}"
+      tunnelProtocol: "{{ cilium_tunnel_protocol }}"
+
+      k8sServiceHost: "{{ cilium_api_server_host }}"
+      k8sServicePort: "{{ cilium_api_server_port }}"
+
+      ipv4:
+        enabled: true
+
+      hubble:
+        enabled: "{{ cilium_hubble_enabled }}"
+        relay:
+          enabled: true
+        ui:
+          enabled: true
