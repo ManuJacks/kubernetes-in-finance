@@ -49,26 +49,46 @@ load balancers.
 successfully moved to LB2 when Keepalived stopped on LB1, then returned
 to LB1 when its Keepalived service restarted.
 
-**Not yet validated:** HAProxy configuration, API server health checks,
-Kubernetes API reachability through the VIP, and control-plane failure
-and recovery.
+HAProxy has been installed and configured through Ansible.
+
+**Not yet validated:** HAProxy runtime health checks against the
+Kubernetes API servers, API reachability through the VIP, and
+control-plane failure and recovery.
 
 The intended Kubernetes controlPlaneEndpoint is 10.97.3.100:6443.
 
 The VIP is hosted by the dedicated load-balancer pair, not by the
 control-plane nodes.
 
-## Cilium
+## Cilium and kube-proxy replacement
 
-Cilium remains the proposed CNI and is expected to provide:
+**Decision:** Cilium will provide Kubernetes pod networking,
+network policy enforcement and eBPF-based Service load balancing.
 
-- Pod addressing and cross-node connectivity.
-- Kubernetes network policy enforcement.
-- Network flow visibility.
-- Optional eBPF-based service handling, subject to a separate decision.
+kube-proxy will not be installed. Cilium will operate in
+kube-proxy replacement mode.
 
-Kube-proxy replacement will not be enabled by default. It requires
-independent justification and validation.
+Rationale:
+
+- Use a modern eBPF-based Kubernetes networking datapath.
+- Avoid maintaining separate kube-proxy and Cilium Service
+  implementations.
+- Provide integrated network policy and flow observability.
+- Establish a foundation for Hubble network monitoring.
+
+Implementation requirements:
+
+- Pin a stable Cilium release compatible with Kubernetes 1.37.1.
+- Configure kubeadm to skip the kube-proxy installation phase.
+- Configure Cilium to use the correct node interfaces and addresses.
+- Preserve API connectivity through 10.97.3.100:6443.
+- Validate Service routing, DNS and cross-node pod connectivity.
+- Test Cilium agent failure and recovery.
+
+The migration and rollback implications of changing the CNI
+must be documented before implementation.
+
+Hubble will be introduced after core networking is operational.
 
 ## Required connectivity
 
@@ -123,7 +143,7 @@ Trade-offs:
 4. **Complete:** Confirm separate zone Layer 2 bridges and host routing.
 5. **Complete:** Validate frontend bridge VRRP and ARP behaviour.
 6. **Complete:** Test VIP failover and recovery between dedicated load balancers.
-7. **Pending:** Install and configure HAProxy.
+7. **Complete:** Deploy HAProxy configuration through Ansible.
 8. **Pending:** Verify API server health checks and API reachability through the VIP.
 9. **Pending:** Test control-plane and etcd connectivity and failure behaviour.
 10. **Pending:** Validate Cilium pod networking and Kubernetes Service routing.
