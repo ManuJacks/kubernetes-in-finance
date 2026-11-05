@@ -42,11 +42,18 @@
   ansible.builtin.apt:
     update_cache: true
 
+- name: Release Kubernetes package holds before version change
+  ansible.builtin.dpkg_selections:
+    name: "{{ item }}"
+    selection: install
+  loop: "{{ kubernetes_packages }}"
+
 - name: Install pinned Kubernetes packages
   ansible.builtin.apt:
     name: "{{ item }}={{ kubernetes_package_version }}"
     state: present
     update_cache: false
+    allow_downgrade: true
   loop: "{{ kubernetes_packages }}"
 
 - name: Hold Kubernetes packages at the pinned version
@@ -66,7 +73,7 @@
     cmd: kubeadm version -o short
   register: kubeadm_version_output
   changed_when: false
-  failed_when: kubeadm_version_output.stdout != "v{{ kubernetes_version }}"
+  failed_when: kubeadm_version_output.stdout != 'v' ~ kubernetes_version
 
 - name: Verify kubelet version
   ansible.builtin.command:
