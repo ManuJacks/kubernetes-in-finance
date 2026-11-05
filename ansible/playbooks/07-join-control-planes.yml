@@ -1,0 +1,67 @@
+---
+- name: Generate temporary control-plane join credentials
+  hosts: tf-ha-control1
+  become: true
+
+  tasks:
+    - name: Generate temporary Kubernetes join credentials
+      ansible.builtin.include_role:
+        name: kubernetes-bootstrap
+        tasks_from: prepare-join-credentials.yml
+
+- name: Join additional Kubernetes control planes
+  hosts: control_plane
+  become: true
+  serial: 1
+  order: inventory
+
+  vars:
+    kubernetes_control_plane_endpoint: "10.97.3.100:6443"
+    kubernetes_cri_socket: "unix:///run/containerd/containerd.sock"
+    kubeadm_admin_conf: /etc/kubernetes/admin.conf
+
+  tasks:
+    - name: Check whether this control plane is already initialized
+      ansible.builtin.stat:
+        path: "{{ kubeadm_admin_conf }}"
+      register: control_plane_admin_conf
+
+    - name: Join additional control plane
+      ansible.builtin.command:
+        argv:
+          - kubeadm
+          - join
+          - "{{ kubernetes_control_plane_endpoint }}"
+          - --token
+          - "{{ hostvars['tf-ha-control1'].kubeadm_bootstrap_token.stdout }}"
+          - --discovery-token-ca-cert-hash
+          - "sha256:{{ hostvars['tf-ha-control1'].kubeadm_ca_cert_hash.stdout }}"
+          - --control-plane
+          - --apiserver-advertise-address
+          - "{{ ansible_host }}"
+          - --certificate-key
+          - "{{ hostvars['tf-ha-control1'].kubeadm_certificate_key.stdout }}"
+          - --cri-socket
+          - "{{ kubernetes_cri_socket }}"
+      when:
+        - inventory_hostname != 'tf-ha-control1'
+        - not control_plane_admin_conf.stat.exists
+      no_log: true
+      register: control_plane_join
+      failed_when: false
+
+    - name: Display control-plane join error
+      ansible.builtin.debug:
+        msg: "{{ control_plane_join.stderr }}"
+      when:
+        - inventory_hostname != 'tf-ha-control1'
+        - not control_plane_admin_conf.stat.exists
+
+    - name: Stop if control-plane join failed
+      ansible.builtin.assert:
+        that:
+          - control_plane_join.rc == 0
+        fail_msg: "The control-plane join failed. See the diagnostic above."
+      when:
+        - inventory_hostname != 'tf-ha-control1'
+        - not control_plane_admin_conf.stat.exists

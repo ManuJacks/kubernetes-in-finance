@@ -93,50 +93,134 @@ The design includes:
 
 ### Implementation and validation status
 
-The following infrastructure components have been configured:
+The infrastructure and Kubernetes control plane have been deployed:
 
-- Two existing load-balancer VMs across zone2 and zone3.
-- HAProxy configuration deployed through Ansible.
-- Keepalived configuration deployed through Ansible.
-- `net.ipv4.ip_nonlocal_bind` enabled to allow HAProxy to bind the VIP
-  when the local node does not currently own it.
-- VRRP failover demonstrated by stopping Keepalived on LB1 and observing
-  LB2 acquire `10.97.3.100`.
+- Two load-balancer VMs across zone2 and zone3.
+- HAProxy and Keepalived configured through Ansible.
+- VRRP failover demonstrated by stopping Keepalived on LB1 and
+  observing LB2 acquire `10.97.3.100`.
+- Three Kubernetes control-plane nodes bootstrapped.
+- Three stacked etcd members reporting healthy endpoints.
+- Two worker nodes joined to the cluster.
+- Kubernetes API access through the configured API VIP.
+- All five Kubernetes nodes reporting Ready.
 
-Kubernetes has not yet been bootstrapped. Consequently, successful
-end-to-end API traffic forwarding, control-plane health checks and
-Kubernetes API availability have not yet been demonstrated.
+The Kubernetes networking layer is deployed:
 
-The load-balancer VMs share a frontend network, allowing VRRP
-advertisements and VIP ownership to operate across their frontend
-interfaces. This architecture does not establish independent physical
+- Cilium 1.20.4 installed on all five nodes.
+- kube-proxy replacement enabled.
+- Kubernetes pod CIDR: `10.244.0.0/16`.
+- Kubernetes Service CIDR: `10.112.0.0/12`.
+- Cilium Kubernetes IPAM with VXLAN overlay routing.
+- Cross-node pod HTTP connectivity demonstrated in both directions.
+
+Cross-zone networking tests identified and mitigated a
+Multipass host NAT issue that translated internal source addresses.
+An Ansible-managed systemd service and timer now reconcile the
+host POSTROUTING exemption. Captured VXLAN traffic shows original
+node source addresses preserved after the change.
+
+Service execution, rule ordering, idempotency and host reboot
+persistence are validated. After reboot, all five Kubernetes
+nodes recovered to Ready, API readiness checks passed through
+the configured API VIP, and all three etcd endpoints successfully
+committed proposals.
+
+Kubernetes Service routing, DNS, NetworkPolicy enforcement,
+Hubble flow validation and component failure/recovery testing
+remain outstanding.
+
+All VMs share one physical host. Multipass zones simulate
+infrastructure separation but do not provide independent physical
 failure domains.
 
 ## 5. Workload networking
 
-Cilium is the proposed Kubernetes CNI.
+Cilium 1.20.4 is the deployed Kubernetes CNI. It provides eBPF-based
+networking, kube-proxy replacement and VXLAN overlay routing.
 
-Validation will cover:
+The current configuration uses:
 
-- Pod-to-pod connectivity.
-- Cross-node connectivity.
-- Pod-to-Service connectivity.
-- DNS resolution.
+- Kubernetes IPAM.
+- Pod CIDR `10.244.0.0/16`.
+- Service CIDR `10.112.0.0/12`.
+- VXLAN encapsulation over UDP port `8472`.
+- kube-proxy replacement.
+
+### Validated
+
+- Cilium agents operate on all five Kubernetes nodes.
+- Cross-node pod HTTP connectivity works in both directions.
+- VXLAN encapsulation traffic has been observed.
+- Original node source addresses have been observed in VXLAN
+  outer packet headers.
+
+### Pending validation
+
+- Kubernetes Service routing.
+- DNS resolution across workloads.
 - NetworkPolicy enforcement.
-- Node and workload failure behaviour.
+- Hubble network-flow visibility.
+- Cilium agent, node and control-plane failure and recovery.
+- Kubernetes Service routing, DNS, NetworkPolicy enforcement and Hubble flow validation.
 
-Kube-proxy replacement is not assumed and requires a separate decision.
+See `docs/decisions/ADR-004-networking.md` for the networking
+decision and `docs/runbooks/network-connectivity.md` for
+validation procedures.
 
 ## 6. Delivery architecture
 
-1. Engineer proposes a change in GitHub.
-2. CI validates source and configuration.
-3. Required review and change authorization occur.
-4. Flux reconciles approved Kubernetes desired state.
-5. Monitoring verifies platform and service health.
-6. Deployment evidence is linked to the change record.
+The delivery architecture separates workflow orchestration, infrastructure
+provisioning, host configuration, platform component installation and
+Kubernetes runtime reconciliation.
 
-GitOps reconciliation does not replace change authorization.
+### Responsibilities
+
+| Component | Responsibility |
+|---|---|
+| GitHub | Source control, pull requests and change history. |
+| GitHub Actions | CI validation and future deployment workflow orchestration. |
+| Terraform | Infrastructure provisioning and lifecycle management. |
+| Ansible | Host configuration and operational orchestration. |
+| Helm | Packaging and installation of Kubernetes platform components. |
+| Flux | Continuous reconciliation of approved Kubernetes desired state. |
+| Monitoring | Deployment health, operational visibility and alerting. |
+
+### Intended delivery workflow
+
+1. Engineer proposes a change through a GitHub pull request.
+2. CI validates source code, infrastructure configuration and automation.
+3. Required review and change authorization occur.
+4. Approved workflows invoke Terraform, Ansible or Helm as appropriate.
+5. Flux reconciles approved Kubernetes desired state where applicable.
+6. Automated validation verifies platform and workload health.
+7. Deployment identity, approval and validation evidence are retained.
+
+### Implementation status
+
+GitHub Actions deployment orchestration is a planned capability.
+The initial implementation will use a secured self-hosted runner
+to reach the private Multipass network.
+
+Terraform, Ansible and Helm remain independently usable automation
+tools. GitHub Actions will coordinate their execution rather than
+replace their responsibilities.
+
+Flux remains responsible for Kubernetes desired-state reconciliation.
+It does not replace CI validation, deployment authorization or
+infrastructure lifecycle management.
+
+### Security and governance
+
+- Protect workflow execution through repository permissions and branch protection.
+- Require approval for infrastructure changes and sensitive deployment operations.
+- Use dedicated, restricted deployment identities.
+- Prevent credentials from entering logs, artifacts or source control.
+- Retain traceability between source changes, approvals, deployments and validation.
+
+The detailed GitHub Actions implementation is deferred until the
+initial highly available Kubernetes platform is operational.
+
 
 ## 7. Observability architecture
 

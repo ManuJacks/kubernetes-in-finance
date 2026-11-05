@@ -1,7 +1,7 @@
 ---
 # Kubernetes release pin
-kubernetes_version: "1.37.1"
-kubernetes_minor: "v1.37"
+kubernetes_version: "1.36.6"
+kubernetes_minor: "v1.36"
 
 # Container runtime release pin
 containerd_version: "2.3.7"

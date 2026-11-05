@@ -1,0 +1,10 @@
+---
+- name: Prepare secure credentials for control-plane expansion
+  hosts: tf-ha-control1
+  become: true
+
+  tasks:
+    - name: Generate temporary Kubernetes join credentials
+      ansible.builtin.include_role:
+        name: kubernetes-bootstrap
+        tasks_from: prepare-join-credentials.yml

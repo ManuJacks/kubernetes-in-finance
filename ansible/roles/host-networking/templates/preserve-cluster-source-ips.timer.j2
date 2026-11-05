@@ -1,0 +1,10 @@
+[Unit]
+Description=Periodically verify internal cluster NAT exemption ordering
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=30s
+Unit=preserve-cluster-source-ips.service
+
+[Install]
+WantedBy=timers.target

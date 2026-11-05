@@ -1,0 +1,9 @@
+---
+- name: Configure host networking for the Kubernetes lab
+  hosts: localhost
+  connection: local
+  become: true
+  gather_facts: true
+
+  roles:
+    - host-networking

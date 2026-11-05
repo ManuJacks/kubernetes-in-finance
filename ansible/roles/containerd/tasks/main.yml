@@ -35,6 +35,8 @@
     owner: root
     group: root
     mode: "0644"
+    modification_time: preserve
+    access_time: preserve
 
 - name: Download runc binary
   ansible.builtin.get_url:

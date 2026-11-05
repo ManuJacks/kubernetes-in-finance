@@ -1,0 +1,11 @@
+---
+- name: Deploy Cilium CNI
+  hosts: localhost
+  connection: local
+  become: false
+
+  vars:
+    ansible_become: false
+
+  roles:
+    - cilium

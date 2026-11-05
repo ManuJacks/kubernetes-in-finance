@@ -46,6 +46,23 @@ regulatory compliance or a production banking platform.
 - [ ] Introduce Hubble for network flow visibility.
 - [ ] Test network component failure and recovery.
 
+#### Next milestone: Kubernetes Service routing and DNS
+
+- [ ] Deploy a temporary test workload and ClusterIP Service.
+- [ ] Verify Service endpoints and cross-node connectivity.
+- [ ] Verify in-cluster DNS resolution, including cross-namespace lookups.
+- [ ] Capture Cilium and Hubble evidence where available.
+- [ ] Test Service and DNS recovery after relevant component restarts.
+- [ ] Record results in acceptance criteria and the networking runbook.
+
+**Starting state:** Cilium 1.20.4 is deployed with kube-proxy
+replacement. All five nodes are Ready, CoreDNS is Running, and
+bidirectional cross-node pod HTTP connectivity is validated.
+
+**Constraints:** Do not change the CNI architecture or introduce
+additional networking components for this milestone. Validate
+the existing deployment first.
+
 ### 4. Observability and operations
 
 - [ ] Establish centralized log collection.
@@ -103,6 +120,22 @@ regulatory compliance or a production banking platform.
 - [ ] Document known limitations and outstanding risks.
 - [ ] Provide runbooks for common operational scenarios.
 - [ ] Link validation evidence to acceptance criteria.
+
+### 10. CI/CD and platform lifecycle automation
+
+**Status: Planned — implement after the initial HA Kubernetes platform is operational.**
+
+- [ ] Introduce GitHub Actions as the controlled workflow orchestration layer.
+- [ ] Implement Terraform plan and approval-gated apply workflows.
+- [ ] Implement Ansible host configuration and platform deployment workflows.
+- [ ] Automate Helm-based Cilium installation and configuration.
+- [ ] Automate controlled Kubernetes control-plane and worker expansion.
+- [ ] Implement automated platform health and acceptance validation.
+- [ ] Introduce a secured self-hosted runner for access to the private Multipass network.
+- [ ] Enforce protected branches, workflow permissions and deployment approvals.
+- [ ] Protect deployment credentials and prevent secrets from entering logs or artifacts.
+- [ ] Retain workflow execution history and deployment evidence.
+- [ ] Evaluate Flux for continuous reconciliation of Kubernetes workloads, complementary to CI/CD orchestration.
 
 ## External control references
 

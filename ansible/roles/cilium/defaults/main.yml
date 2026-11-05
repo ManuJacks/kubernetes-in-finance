@@ -1,0 +1,20 @@
+---
+cilium_version: "1.20.4"
+
+cilium_namespace: "kube-system"
+
+cilium_helm_repo_name: "cilium"
+cilium_helm_repo_url: "https://helm.cilium.io"
+
+cilium_kube_proxy_replacement: true
+cilium_routing_mode: "tunnel"
+cilium_tunnel_protocol: "vxlan"
+
+cilium_ipam_mode: "kubernetes"
+
+cilium_pod_cidr: "10.244.0.0/16"
+
+cilium_api_server_host: "10.97.3.100"
+cilium_api_server_port: 6443
+
+cilium_hubble_enabled: true
