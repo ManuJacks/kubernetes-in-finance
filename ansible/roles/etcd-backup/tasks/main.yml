@@ -1,4 +1,10 @@
 ---
+- name: Install NFS client package when NFS is enabled
+  ansible.builtin.package:
+    name: nfs-common
+    state: present
+  when: etcd_backup_use_nfs | bool
+
 - name: Ensure backup directory exists
   ansible.builtin.file:
     path: "{{ etcd_backup_dir }}"
@@ -6,6 +12,15 @@
     owner: "{{ etcd_backup_user }}"
     group: "{{ etcd_backup_group }}"
     mode: "0700"
+
+- name: Mount NFS backup export
+  ansible.posix.mount:
+    path: "{{ etcd_backup_dir }}"
+    src: "{{ etcd_backup_nfs_server }}:{{ etcd_backup_nfs_export }}"
+    fstype: nfs
+    opts: "{{ etcd_backup_nfs_mount_opts }}"
+    state: mounted
+  when: etcd_backup_use_nfs | bool
 
 - name: Deploy etcd backup script
   ansible.builtin.template:

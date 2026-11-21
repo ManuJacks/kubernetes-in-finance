@@ -5,6 +5,16 @@ etcd_backup_group: "root"
 etcd_backup_retention_days: 7
 etcd_backup_schedule: "*-*-* 02:00:00" # Daily at 02:00 UTC
 
+# External NFS Storage Option
+# When enabled, the role ensures nfs-common is installed and mounts the NFS export to etcd_backup_dir
+etcd_backup_use_nfs: false
+etcd_backup_nfs_server: ""
+etcd_backup_nfs_export: ""
+etcd_backup_nfs_mount_opts: "rw,sync,hard,intr"
+
+# Safety guardrail: require backup directory to be an active mount point before taking snapshots
+etcd_backup_require_mount: false
+
 # etcd TLS and endpoint configurations (kubeadm defaults)
 etcd_backup_endpoint: "https://127.0.0.1:2379"
 etcd_backup_ca_cert: "/etc/kubernetes/pki/etcd/ca.crt"
