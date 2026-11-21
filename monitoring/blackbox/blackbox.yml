@@ -1,0 +1,13 @@
+---
+modules:
+  # /readyz is readable anonymously (system:public-info-viewer). The API
+  # server certificate is verified against the cluster CA.
+  k8s_readyz:
+    prober: http
+    timeout: 4s
+    http:
+      method: GET
+      valid_status_codes: [200]
+      preferred_ip_protocol: ip4
+      tls_config:
+        ca_file: /etc/blackbox/kubernetes-ca.crt

@@ -1,0 +1,81 @@
+# Managed by Ansible (roles/monitoring) — do not edit manually.
+name: kif-monitoring
+
+services:
+  prometheus:
+    image: {{ monitoring_images.prometheus }}
+    restart: unless-stopped
+    network_mode: host
+    user: "65534:65534"
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time={{ monitoring_retention_time }}
+      - --storage.tsdb.retention.size={{ monitoring_retention_size }}
+      - --web.listen-address=127.0.0.1:9090
+      - --web.enable-lifecycle
+    volumes:
+      - {{ monitoring_home }}/config/prometheus:/etc/prometheus:ro
+      - prometheus-data:/prometheus
+    mem_limit: {{ monitoring_memory_limits.prometheus }}
+
+  blackbox:
+    image: {{ monitoring_images.blackbox }}
+    restart: unless-stopped
+    network_mode: host
+    command:
+      - --config.file=/etc/blackbox/blackbox.yml
+      - --web.listen-address=127.0.0.1:9115
+    volumes:
+      - {{ monitoring_home }}/config/blackbox:/etc/blackbox:ro
+    mem_limit: {{ monitoring_memory_limits.blackbox }}
+
+  node-exporter:
+    image: {{ monitoring_images.node_exporter }}
+    restart: unless-stopped
+    network_mode: host
+    pid: host
+    command:
+      - --path.rootfs=/host
+      - --web.listen-address=127.0.0.1:9100
+      - --collector.textfile.directory=/textfile
+    volumes:
+      - /:/host:ro,rslave
+      - {{ monitoring_home }}/textfile:/textfile:ro
+    mem_limit: {{ monitoring_memory_limits.node_exporter }}
+
+  # RPO: reads the root-owned NFS backup export read-only; writes metrics only.
+  etcd-backup-collector:
+    image: {{ monitoring_images.busybox }}
+    restart: unless-stopped
+    network_mode: none
+    command: ["/bin/sh", "/collector/etcd-backup-metrics.sh"]
+    volumes:
+      - {{ monitoring_backup_dir }}:/backups:ro
+      - {{ monitoring_home }}/config/collectors:/collector:ro
+      - {{ monitoring_home }}/textfile:/textfile
+    mem_limit: {{ monitoring_memory_limits.backup_collector }}
+
+  grafana:
+    image: {{ monitoring_images.grafana }}
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      GF_SERVER_HTTP_ADDR: 127.0.0.1
+      GF_SERVER_HTTP_PORT: "3000"
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana-admin-password
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/platform-reliability.json
+    volumes:
+      - {{ monitoring_home }}/config/grafana/provisioning:/etc/grafana/provisioning:ro
+      - {{ monitoring_home }}/config/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - {{ monitoring_home }}/secrets/grafana-admin-password:/run/secrets/grafana-admin-password:ro
+      - grafana-data:/var/lib/grafana
+    mem_limit: {{ monitoring_memory_limits.grafana }}
+
+volumes:
+  prometheus-data:
+  grafana-data:

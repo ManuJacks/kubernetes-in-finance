@@ -1,0 +1,169 @@
+---
+rule_files:
+  - ../rules/api-availability-slo.yml
+  - ../rules/etcd-backup-rpo.yml
+  - ../rules/drills.yml
+
+evaluation_interval: 30s
+
+tests:
+  # A 10-minute total outage after an hour of health pages via the fast burn.
+  - interval: 10s
+    input_series:
+      - series: 'probe_success{job="api-vip", instance="vip"}'
+        values: '1x360 0x60'
+    alert_rule_test:
+      - eval_time: 70m
+        alertname: ApiAvailabilityFastBurn
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              job: api-vip
+              instance: vip
+            exp_annotations:
+              summary: API availability error budget burning at more than 14.4x (2% of the 30-day budget per hour).
+              runbook: docs/gameday/2026-11-21-api-availability.md
+      - eval_time: 70m
+        alertname: ApiAvailabilityProbeAbsent
+        exp_alerts: []
+
+  # A 4-second blip (like a load-balancer failover) must not page.
+  - interval: 2s
+    input_series:
+      - series: 'probe_success{job="api-vip", instance="vip"}'
+        values: '1x1800 0x2 1x1800'
+    alert_rule_test:
+      - eval_time: 2h
+        alertname: ApiAvailabilityFastBurn
+        exp_alerts: []
+      - eval_time: 2h
+        alertname: ApiAvailabilitySlowBurn
+        exp_alerts: []
+
+  # Healthy probes: full error budget remains.
+  - interval: 10s
+    input_series:
+      - series: 'probe_success{job="api-vip", instance="vip"}'
+        values: '1x400'
+    promql_expr_test:
+      - expr: slo:api_availability:error_budget_remaining_ratio
+        eval_time: 1h
+        exp_samples:
+          - labels: 'slo:api_availability:error_budget_remaining_ratio{instance="vip", job="api-vip"}'
+            value: 1
+
+  # Missing probe series is itself an alert: the SLO would be unmeasured.
+  - interval: 30s
+    input_series:
+      - series: 'up{job="prometheus"}'
+        values: '1x20'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: ApiAvailabilityProbeAbsent
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              job: api-vip
+            exp_annotations:
+              summary: The API availability probe is not reporting; the SLO is not being measured.
+              runbook: docs/gameday/2026-11-21-api-availability.md
+
+  # RPO: newest snapshot frozen at t=1s, so its age exceeds 26 h.
+  # Samples every minute, as in production (instant-query lookback is 5 m).
+  - interval: 1m
+    input_series:
+      - series: 'etcd_backup_newest_snapshot_timestamp_seconds'
+        values: '1x1700'
+      - series: 'etcd_backup_snapshots'
+        values: '5x1700'
+      - series: 'etcd_backup_collector_last_run_timestamp_seconds'
+        values: '0+60x1700'
+    alert_rule_test:
+      - eval_time: 27h
+        alertname: EtcdBackupRPOAtRisk
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+            exp_annotations:
+              summary: Newest etcd snapshot is older than 26 hours; the 24-hour RPO objective is at risk.
+              runbook: docs/runbooks/etcd-backup-restore.md
+      - eval_time: 27h
+        alertname: EtcdBackupCollectorStale
+        exp_alerts: []
+      - eval_time: 20h
+        alertname: EtcdBackupRPOAtRisk
+        exp_alerts: []
+
+  # RPO: the newest snapshot is always exactly 30 minutes old: no alert,
+  # and the recorded age is asserted so this test cannot pass vacuously.
+  - interval: 1m
+    input_series:
+      - series: 'etcd_backup_newest_snapshot_timestamp_seconds'
+        values: '-1800+60x1700'
+      - series: 'etcd_backup_snapshots'
+        values: '5x1700'
+    alert_rule_test:
+      - eval_time: 27h
+        alertname: EtcdBackupRPOAtRisk
+        exp_alerts: []
+    promql_expr_test:
+      - expr: etcd_backup:newest_snapshot_age_seconds
+        eval_time: 27h
+        exp_samples:
+          - labels: 'etcd_backup:newest_snapshot_age_seconds'
+            value: 1800
+
+  # Empty backup store pages; a stale collector raises a ticket.
+  - interval: 1m
+    input_series:
+      - series: 'etcd_backup_snapshots'
+        values: '0x30'
+      - series: 'etcd_backup_collector_last_run_timestamp_seconds'
+        values: '0x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: EtcdBackupMissing
+        exp_alerts:
+          - exp_labels:
+              severity: page
+            exp_annotations:
+              summary: No etcd snapshots exist in the backup store.
+              runbook: docs/runbooks/etcd-backup-restore.md
+      - eval_time: 20m
+        alertname: EtcdBackupCollectorStale
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+            exp_annotations:
+              summary: The etcd backup metrics collector has not reported for 10 minutes; RPO is not being measured.
+              runbook: docs/runbooks/etcd-backup-restore.md
+
+  # Drills: a failed drill and an overdue drill both raise tickets.
+  - interval: 5m
+    input_series:
+      - series: 'platform_drill_last_success{drill="etcd_isolated_restore"}'
+        values: '0x9000'
+      - series: 'platform_drill_last_run_timestamp_seconds{drill="etcd_isolated_restore"}'
+        values: '0x9000'
+    alert_rule_test:
+      - eval_time: 1h
+        alertname: PlatformDrillFailed
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              drill: etcd_isolated_restore
+            exp_annotations:
+              summary: The most recent recovery drill failed.
+              runbook: docs/runbooks/etcd-backup-restore.md
+      - eval_time: 31d
+        alertname: PlatformDrillOverdue
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              drill: etcd_isolated_restore
+            exp_annotations:
+              summary: No recovery drill has run in 30 days; recovery evidence is stale.
+              runbook: docs/runbooks/etcd-backup-restore.md
+      - eval_time: 29d
+        alertname: PlatformDrillOverdue
+        exp_alerts: []

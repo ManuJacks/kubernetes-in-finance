@@ -125,23 +125,45 @@ validation evidence and known limitations are documented.
 ## 8. Observability and Incident Management
 
 - [ ] Infrastructure and Kubernetes metrics are collected.
-- [ ] Critical platform alerts are configured.
-- [ ] API endpoint availability is monitored.
+      _Partial: host metrics and API probes only; no VM or Kubernetes object
+      metrics yet ([monitoring](../monitoring/README.md))._
+- [x] Critical platform alerts are configured.
+      _Evidence: API availability burn-rate, RPO and drill alerts, unit-tested
+      with `promtool test rules` in CI ([monitoring](../monitoring/README.md))._
+- [x] API endpoint availability is monitored.
+      _Evidence: `/readyz` through the VIP every 10 s with TLS verification;
+      99.9% / 30-day SLO ([monitoring](../monitoring/README.md))._
 - [ ] Cilium network health is observable.
 - [ ] Alert delivery is tested.
-- [ ] Incident response procedures are documented.
+      _Not implemented: alerts are visible in Prometheus and Grafana but are
+      not routed (no Alertmanager)._
+- [x] Incident response procedures are documented.
+      _Evidence: `docs/runbooks/`, `docs/incidents/`._
 - [ ] Monitoring failures are detectable.
+      _Partial: a missing probe and a stale backup collector raise tested
+      alerts; failure of Prometheus itself is not detected._
 
 ## 9. Disaster Recovery and Resilience
 
 - [x] etcd backup procedures are documented.
 - [ ] etcd restoration is tested.
+      _Partial: the isolated restore drill passes and is timed
+      (`scripts/drills/etcd-restore-drill.sh`); full cluster restore not yet
+      exercised._
 - [ ] Application data backup and restoration are tested.
-- [ ] Recovery Time Objectives (RTO) are defined.
-- [ ] Recovery Point Objectives (RPO) are defined.
-- [ ] Recovery exercises record actual recovery times.
+- [x] Recovery Time Objectives (RTO) are defined.
+      _For load-balancer and control-plane failures; full-cluster restore RTO
+      intentionally unset until timed ([monitoring](../monitoring/README.md))._
+- [x] Recovery Point Objectives (RPO) are defined.
+      _24 h, measured continuously from the backup store ([monitoring](../monitoring/README.md))._
+- [x] Recovery exercises record actual recovery times.
+      _Evidence: [game day](../gameday/2026-11-21-api-availability.md) probe measurements; restore drill duration exported
+      as `platform_drill_duration_seconds`._
 - [ ] Backup copies are separated from the primary failure domain.
-- [ ] Recovery limitations are documented.
+      _Partial: snapshots are stored on the host over NFS, outside the VMs,
+      but on the same physical machine._
+- [x] Recovery limitations are documented.
+      _Evidence: [monitoring](../monitoring/README.md) ("What this does not claim"), [game day](../gameday/2026-11-21-api-availability.md)._
 
 **Evidence and procedures:**
 

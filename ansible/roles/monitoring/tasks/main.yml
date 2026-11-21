@@ -1,0 +1,113 @@
+---
+- name: Require Docker with the Compose plugin
+  ansible.builtin.command:
+    cmd: docker compose version
+  changed_when: false
+
+- name: Create monitoring directories
+  ansible.builtin.file:
+    path: "{{ monitoring_home }}/{{ item.path }}"
+    state: directory
+    mode: "{{ item.mode }}"
+  loop:
+    - {path: "", mode: "0755"}
+    - {path: config, mode: "0755"}
+    - {path: textfile, mode: "0755"}
+    # Directory is private on the host; the file inside is bind-mounted
+    # directly, so the Grafana container (uid 472) can read it.
+    - {path: secrets, mode: "0700"}
+  loop_control:
+    label: "{{ item.path or '.' }}"
+
+- name: Copy portable monitoring configuration
+  ansible.builtin.copy:
+    src: "{{ monitoring_repo_dir }}/{{ item }}"
+    dest: "{{ monitoring_home }}/config/"
+    mode: preserve
+    directory_mode: "0755"
+  loop:
+    - prometheus
+    - blackbox
+    - collectors
+    - grafana
+  notify: Restart monitoring stack
+
+- name: Read the cluster kubeconfig
+  ansible.builtin.slurp:
+    src: "{{ monitoring_kubeconfig }}"
+  register: monitoring_kubeconfig_raw
+  no_log: true
+
+- name: Install the cluster CA for probe TLS verification (CA certificate only)
+  ansible.builtin.copy:
+    content: >-
+      {{ ((monitoring_kubeconfig_raw.content | b64decode | from_yaml).clusters[0].cluster['certificate-authority-data'])
+         | b64decode }}
+    dest: "{{ monitoring_home }}/config/blackbox/kubernetes-ca.crt"
+    mode: "0644"
+  notify: Restart monitoring stack
+
+- name: Generate the Grafana admin password (stored outside the repository)
+  ansible.builtin.set_fact:
+    monitoring_grafana_password: >-
+      {{ lookup('ansible.builtin.password', monitoring_home ~ '/secrets/grafana-admin-password',
+                length=32, chars=['ascii_letters', 'digits']) }}
+  no_log: true
+
+- name: Set Grafana password file permissions
+  ansible.builtin.file:
+    path: "{{ monitoring_home }}/secrets/grafana-admin-password"
+    mode: "0644"
+
+- name: Render Docker Compose project
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ monitoring_home }}/compose.yml"
+    mode: "0644"
+
+- name: Start monitoring stack
+  community.docker.docker_compose_v2:
+    project_src: "{{ monitoring_home }}"
+    state: present
+    pull: missing
+    remove_orphans: true
+
+- name: Apply pending restarts
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait for Prometheus to be ready
+  ansible.builtin.uri:
+    url: http://127.0.0.1:9090/-/ready
+  register: monitoring_prometheus_ready
+  until: monitoring_prometheus_ready.status == 200
+  retries: 30
+  delay: 2
+
+- name: Wait for Grafana to be healthy
+  ansible.builtin.uri:
+    url: http://127.0.0.1:3000/api/health
+  register: monitoring_grafana_health
+  until: monitoring_grafana_health.status == 200
+  retries: 30
+  delay: 2
+
+- name: Wait for every scrape target to be up
+  ansible.builtin.uri:
+    url: http://127.0.0.1:9090/api/v1/targets?state=active
+    return_content: true
+  register: monitoring_targets
+  until: >-
+    (monitoring_targets.json.data.activeTargets | length) > 0 and
+    (monitoring_targets.json.data.activeTargets | rejectattr('health', 'equalto', 'up') | list | length) == 0
+  retries: 20
+  delay: 5
+
+- name: Verify alerting and recording rules loaded without errors
+  ansible.builtin.uri:
+    url: http://127.0.0.1:9090/api/v1/rules
+    return_content: true
+  register: monitoring_rules
+  failed_when: >-
+    (monitoring_rules.json.data.groups | map(attribute='rules') | flatten | length) < 18 or
+    (monitoring_rules.json.data.groups | map(attribute='rules') | flatten
+      | selectattr('health', 'defined') | rejectattr('health', 'equalto', 'ok') | list | length) > 0

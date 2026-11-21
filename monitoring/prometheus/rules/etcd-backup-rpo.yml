@@ -1,0 +1,39 @@
+---
+# RPO objective: at most 24 hours of etcd data loss. Backups run daily at
+# 02:00 UTC (etcd-backup role); the alert allows 2 hours of slack.
+groups:
+  - name: etcd-backup-rpo
+    rules:
+      - record: etcd_backup:newest_snapshot_age_seconds
+        expr: |
+          (time() - etcd_backup_newest_snapshot_timestamp_seconds)
+          and etcd_backup_newest_snapshot_timestamp_seconds > 0
+
+      - alert: EtcdBackupRPOAtRisk
+        expr: etcd_backup:newest_snapshot_age_seconds > 26 * 3600
+        for: 10m
+        labels:
+          severity: ticket
+        annotations:
+          summary: Newest etcd snapshot is older than 26 hours; the 24-hour RPO objective is at risk.
+          runbook: docs/runbooks/etcd-backup-restore.md
+
+      - alert: EtcdBackupMissing
+        expr: etcd_backup_snapshots == 0
+        for: 10m
+        labels:
+          severity: page
+        annotations:
+          summary: No etcd snapshots exist in the backup store.
+          runbook: docs/runbooks/etcd-backup-restore.md
+
+      - alert: EtcdBackupCollectorStale
+        expr: |
+          (time() - etcd_backup_collector_last_run_timestamp_seconds > 600)
+          or absent(etcd_backup_collector_last_run_timestamp_seconds)
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: The etcd backup metrics collector has not reported for 10 minutes; RPO is not being measured.
+          runbook: docs/runbooks/etcd-backup-restore.md

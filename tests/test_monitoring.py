@@ -1,0 +1,76 @@
+"""Static checks for the monitoring stack (roles/monitoring, monitoring/)."""
+
+import json
+import os
+import re
+
+import yaml
+
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+MON = os.path.join(ROOT, "monitoring")
+ROLE = os.path.join(ROOT, "ansible", "roles", "monitoring")
+
+
+def read(*parts):
+    with open(os.path.join(*parts)) as f:
+        return f.read()
+
+
+def recorded_names():
+    names = set()
+    rules_dir = os.path.join(MON, "prometheus", "rules")
+    for fname in os.listdir(rules_dir):
+        for group in yaml.safe_load(read(rules_dir, fname))["groups"]:
+            for rule in group["rules"]:
+                if "record" in rule:
+                    names.add(rule["record"])
+    return names
+
+
+def test_dashboard_queries_reference_defined_recording_rules():
+    """A typo in a recording-rule name would silently show 'No data'."""
+    dashboard = json.loads(read(MON, "grafana", "dashboards", "platform-reliability.json"))
+    recorded = recorded_names()
+    for panel in dashboard["panels"]:
+        for target in panel.get("targets", []):
+            for name in re.findall(r"\b(?:sli|slo|etcd_backup|platform_drill):[a-z0-9_:]+", target["expr"]):
+                assert name in recorded, f"panel {panel['title']!r} uses unknown rule {name}"
+            assert target["datasource"]["uid"] == "prometheus"
+
+
+def test_dashboard_datasource_matches_provisioning():
+    ds = yaml.safe_load(read(MON, "grafana", "provisioning", "datasources", "prometheus.yml"))
+    assert ds["datasources"][0]["uid"] == "prometheus"
+
+
+def test_every_listener_is_localhost_only():
+    compose = read(ROLE, "templates", "docker-compose.yml.j2")
+    assert "ports:" not in compose, "host networking only; no published ports"
+    for flag in re.findall(r"listen-address=([^\s]+)", compose):
+        assert flag.startswith("127.0.0.1:"), flag
+    assert "GF_SERVER_HTTP_ADDR: 127.0.0.1" in compose
+    assert 'GF_AUTH_ANONYMOUS_ENABLED: "false"' in compose
+
+
+def test_images_pinned_by_digest_and_memory_limited():
+    defaults = yaml.safe_load(read(ROLE, "defaults", "main.yml"))
+    for name, image in defaults["monitoring_images"].items():
+        assert re.search(r":[\w.-]+@sha256:[0-9a-f]{64}$", image), f"{name} not pinned: {image}"
+    compose = read(ROLE, "templates", "docker-compose.yml.j2")
+    services = yaml.safe_load(re.sub(r"\{\{[^}]+\}\}", "x", compose))["services"]
+    for name, svc in services.items():
+        assert "mem_limit" in svc, f"{name} has no memory limit"
+
+
+def test_backup_store_mounted_read_only_and_collector_offline():
+    compose = read(ROLE, "templates", "docker-compose.yml.j2")
+    assert "{{ monitoring_backup_dir }}:/backups:ro" in compose
+    collector = compose.split("etcd-backup-collector:", 1)[1].split("\n\n", 1)[0]
+    assert "network_mode: none" in collector
+
+
+def test_grafana_password_not_in_repository():
+    tasks = read(ROLE, "tasks", "main.yml")
+    assert "lookup('ansible.builtin.password'" in tasks
+    assert "secrets/grafana-admin-password" in tasks
+    assert "no_log: true" in tasks
