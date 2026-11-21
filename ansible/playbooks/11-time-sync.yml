@@ -1,0 +1,83 @@
+---
+# Enforce and verify clock synchronisation on every host, one host at a time.
+#
+# Safe to run against a live cluster. Correcting a large offset steps the
+# clock; expect transient effects described in
+# docs/incidents/2026-11-21-clock-drift-after-host-suspend.md (e.g. service
+# account tokens issued by a fast API server are "not valid yet" until real
+# time catches up with their issue time).
+#
+#   ANSIBLE_CONFIG=ansible/ansible.cfg ansible-playbook \
+#     -i ansible/inventory/hosts.yml ansible/playbooks/11-time-sync.yml
+#
+# Use --check --diff first to preview configuration changes.
+
+- name: Enforce clock synchronisation
+  hosts: load_balancers:control_plane:workers
+  become: true
+  gather_facts: false
+  serial: 1
+  any_errors_fatal: true
+
+  roles:
+    - timesync
+
+  post_tasks:
+    - name: Verify the local API server is live after any clock step
+      ansible.builtin.uri:
+        url: https://127.0.0.1:6443/livez
+        validate_certs: false
+        return_content: true
+      register: time_sync_livez
+      until: time_sync_livez.status == 200
+      retries: 20
+      delay: 3
+      when: inventory_hostname in groups['control_plane']
+      check_mode: false
+
+    - name: Verify local etcd member health
+      ansible.builtin.command:
+        cmd: >-
+          etcdctl --endpoints=https://127.0.0.1:2379
+          --cacert=/etc/kubernetes/pki/etcd/ca.crt
+          --cert=/etc/kubernetes/pki/etcd/healthcheck-client.crt
+          --key=/etc/kubernetes/pki/etcd/healthcheck-client.key
+          endpoint health
+      environment:
+        ETCDCTL_API: "3"
+      register: time_sync_etcd
+      changed_when: false
+      until: time_sync_etcd.rc == 0
+      retries: 10
+      delay: 3
+      when: inventory_hostname in groups['control_plane']
+      check_mode: false
+
+- name: Verify cluster-wide clock agreement
+  hosts: load_balancers:control_plane:workers
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Read epoch from each host
+      ansible.builtin.command:
+        cmd: date +%s.%N
+      register: time_sync_epoch
+      changed_when: false
+      check_mode: false
+
+    - name: Assert all hosts agree within tolerance
+      run_once: true
+      vars:
+        time_sync_epochs: >-
+          {{ ansible_play_hosts | map('extract', hostvars, ['time_sync_epoch', 'stdout'])
+             | map('float') | list }}
+        # Allow for sequential SSH round-trips when sampling.
+        time_sync_tolerance_seconds: 5
+      ansible.builtin.assert:
+        that:
+          - (time_sync_epochs | max) - (time_sync_epochs | min) <= time_sync_tolerance_seconds
+        fail_msg: >-
+          Host clocks disagree by {{ ((time_sync_epochs | max) - (time_sync_epochs | min)) | round(2) }}s.
+        success_msg: >-
+          Host clocks agree within {{ ((time_sync_epochs | max) - (time_sync_epochs | min)) | round(2) }}s.
+      ignore_errors: "{{ ansible_check_mode }}"

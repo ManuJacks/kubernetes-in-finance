@@ -1,0 +1,115 @@
+---
+# Recover a control-plane static pod whose container is running but whose
+# kubelet is stuck retrying CreateContainer:
+#
+#   Error: failed to reserve container name "<name>_<attempt>":
+#   name "<name>_<attempt>" is reserved for "<container-id>"
+#
+# Cause: containerd created the container, but the kubelet never received the
+# response (for example, the host was suspended or shut down mid-call). The
+# kubelet keeps retrying with the same name and containerd keeps refusing.
+#
+# Recovery restarts the kubelet so it re-lists containers through CRI and
+# adopts the running one. Running containers are not stopped. If the kubelet
+# still reports the error, set recover_restart_containerd=true to also restart
+# containerd (containers keep running under their shims).
+#
+#   ANSIBLE_CONFIG=ansible/ansible.cfg ansible-playbook \
+#     -i ansible/inventory/hosts.yml ansible/playbooks/12-recover-static-pod.yml \
+#     -e recover_target=tf-ha-control2 -e recover_component=kube-apiserver
+
+- name: Recover a stuck control-plane static pod
+  hosts: "{{ recover_target | default('control_plane') }}"
+  become: true
+  gather_facts: false
+  vars:
+    recover_component: kube-apiserver
+    recover_restart_containerd: false
+    recover_kubeconfig: /etc/kubernetes/admin.conf
+    recover_pod: "{{ recover_component }}-{{ inventory_hostname }}"
+
+  tasks:
+    - name: Require an explicit control-plane target and supported component
+      ansible.builtin.assert:
+        that:
+          - recover_target is defined
+          - recover_target in groups['control_plane']
+          - recover_component in ['kube-apiserver', 'kube-controller-manager', 'kube-scheduler', 'etcd']
+        fail_msg: >-
+          Set recover_target to exactly one control-plane host and
+          recover_component to a static-pod component. This playbook never
+          selects all control-plane nodes implicitly.
+
+    - name: Read static pod status
+      ansible.builtin.command:
+        cmd: >-
+          kubectl --kubeconfig {{ recover_kubeconfig }} -n kube-system
+          get pod {{ recover_pod }} -o json
+      register: recover_pod_before
+      changed_when: false
+
+    - name: Read running containers for the component
+      ansible.builtin.command:
+        cmd: crictl ps --name {{ recover_component }} --state running -q
+      register: recover_running
+      changed_when: false
+
+    - name: Summarise preflight
+      vars:
+        recover_waiting: >-
+          {{ (recover_pod_before.stdout | from_json).status.containerStatuses[0].state.waiting | default({}) }}
+      ansible.builtin.set_fact:
+        recover_waiting_reason: "{{ recover_waiting.reason | default('') }}"
+        recover_running_count: "{{ recover_running.stdout_lines | length }}"
+
+    - name: Refuse unless the stuck-reservation condition is present
+      ansible.builtin.assert:
+        that:
+          - recover_waiting_reason == 'CreateContainerError'
+          - recover_running_count | int == 1
+        fail_msg: >-
+          {{ recover_pod }} is not in the stuck-reservation state
+          (waiting reason '{{ recover_waiting_reason }}', running containers
+          {{ recover_running_count }}). Nothing changed; investigate manually.
+
+    - name: Restart kubelet so it re-lists and adopts the running container
+      ansible.builtin.systemd_service:
+        name: kubelet
+        state: restarted
+
+    - name: Optionally restart containerd (running containers are preserved)
+      ansible.builtin.systemd_service:
+        name: containerd
+        state: restarted
+      when: recover_restart_containerd | bool
+
+    - name: Wait for the static pod to report Ready
+      ansible.builtin.command:
+        cmd: >-
+          kubectl --kubeconfig {{ recover_kubeconfig }} -n kube-system
+          get pod {{ recover_pod }}
+          -o jsonpath={.status.containerStatuses[0].ready}
+      register: recover_ready
+      changed_when: false
+      until: recover_ready.stdout == 'true'
+      retries: 30
+      delay: 5
+      failed_when: false
+
+    - name: Confirm exactly one running container remains
+      ansible.builtin.command:
+        cmd: crictl ps --name {{ recover_component }} --state running -q
+      register: recover_running_after
+      changed_when: false
+
+    - name: Assert recovery
+      ansible.builtin.assert:
+        that:
+          - recover_ready.stdout == 'true'
+          - recover_running_after.stdout_lines | length == 1
+        fail_msg: >-
+          {{ recover_pod }} did not recover (ready={{ recover_ready.stdout }},
+          running containers={{ recover_running_after.stdout_lines | length }}).
+          If the kubelet still reports the reservation error, re-run with
+          -e recover_restart_containerd=true.
+        success_msg: "{{ recover_pod }} is Ready and managed by the kubelet."

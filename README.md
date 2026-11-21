@@ -188,6 +188,33 @@ investigate on any version mismatch, unexpected workload, failed readiness, or
 token-cleanup error. Multipass zones remain simulated failure domains on one
 physical host, not independent availability zones.
 
+## Clock synchronisation and static-pod recovery
+
+All hosts run chrony through the `timesync` role (part of `01-common.yml`
+and `02-load-balancers.yml`). The role allows chrony to step large offsets
+at any time, because a desktop-host suspend pauses every VM and the Ubuntu
+default only permits stepping at startup. It fails the play if a host is
+more than 0.5 s from NTP. See
+[the 2026-11-21 incident](docs/incidents/2026-11-21-clock-drift-after-host-suspend.md).
+
+To correct and verify a running cluster one host at a time (preview first
+with `--check --diff`):
+
+```bash
+ANSIBLE_CONFIG=ansible/ansible.cfg ansible-playbook -i ansible/inventory/hosts.yml ansible/playbooks/11-time-sync.yml
+```
+
+If a control-plane static pod shows `CreateContainerError` with
+`failed to reserve container name ... is reserved for ...` while its
+container is running, recover it without stopping the container:
+
+```bash
+ANSIBLE_CONFIG=ansible/ansible.cfg ansible-playbook -i ansible/inventory/hosts.yml ansible/playbooks/12-recover-static-pod.yml \
+  -e recover_target=tf-ha-control2 -e recover_component=kube-apiserver
+```
+
+The playbook refuses to act unless that exact condition is present.
+
 ## Engineering Principles
 
 - Document architectural decisions, alternatives and trade-offs.

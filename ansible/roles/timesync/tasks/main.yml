@@ -1,0 +1,72 @@
+---
+- name: Install chrony
+  ansible.builtin.apt:
+    name: chrony
+    state: present
+
+- name: Disable systemd-timesyncd to avoid competing clock disciplines
+  ansible.builtin.systemd_service:
+    name: systemd-timesyncd
+    state: stopped
+    enabled: false
+  failed_when: false
+
+- name: Allow chrony to step large offsets at any time (VM suspend/resume)
+  ansible.builtin.lineinfile:
+    path: "{{ timesync_chrony_config }}"
+    regexp: '^\s*makestep\s+'
+    line: "makestep {{ timesync_makestep_threshold_seconds }} {{ timesync_makestep_limit }}"
+    insertafter: EOF
+    validate: "chronyd -p -f %s"
+  notify: Restart chrony
+
+- name: Enable and start chrony
+  ansible.builtin.systemd_service:
+    name: chrony
+    state: started
+    enabled: true
+
+- name: Apply pending chrony changes
+  ansible.builtin.meta: flush_handlers
+
+- name: Correct any existing offset immediately
+  ansible.builtin.command:
+    cmd: chronyc makestep
+  changed_when: false
+
+- name: Wait for chrony to synchronise
+  ansible.builtin.command:
+    cmd: >-
+      chronyc waitsync {{ timesync_waitsync_tries }}
+      {{ timesync_max_offset_seconds }} 0
+      {{ timesync_waitsync_interval_seconds }}
+  changed_when: false
+  register: timesync_waitsync
+  failed_when: false
+  when: not ansible_check_mode
+
+- name: Read chrony tracking state
+  ansible.builtin.command:
+    cmd: chronyc -c tracking
+  changed_when: false
+  register: timesync_tracking
+  check_mode: false
+
+- name: Assert the clock is synchronised within tolerance
+  vars:
+    # CSV field 5 (0-based 4) is the current system time offset in seconds.
+    timesync_offset: "{{ (timesync_tracking.stdout.split(',')[4] | float) | abs }}"
+    timesync_leap: "{{ timesync_tracking.stdout.split(',')[13] | default('') }}"
+  ansible.builtin.assert:
+    that:
+      - timesync_waitsync.rc | default(0) == 0
+      - timesync_offset | float <= timesync_max_offset_seconds | float
+      - timesync_leap != 'Not synchronised'
+    fail_msg: >-
+      {{ inventory_hostname }} clock is not synchronised: offset
+      {{ timesync_offset }}s (limit {{ timesync_max_offset_seconds }}s),
+      leap status '{{ timesync_leap }}'. Check NTP reachability with
+      `chronyc -n sources`.
+    success_msg: "{{ inventory_hostname }} clock offset {{ timesync_offset }}s"
+  # In --check mode, report the current state without failing the preview.
+  ignore_errors: "{{ ansible_check_mode }}"

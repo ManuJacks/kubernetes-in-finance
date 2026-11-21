@@ -31,6 +31,12 @@ validation evidence and known limitations are documented.
       operation.
 - [ ] Worker failure is detected and workloads recover where
       replica capacity permits.
+- [ ] Every host's clock is within 0.5 s of NTP and all hosts agree
+      within 5 s (`11-time-sync.yml`), including after a host
+      suspend/resume.
+- [ ] A control-plane static pod stuck in `CreateContainerError` with a
+      reserved container name is recovered by `12-recover-static-pod.yml`
+      without stopping the running container.
 
 ## 3. Kubernetes Networking
 

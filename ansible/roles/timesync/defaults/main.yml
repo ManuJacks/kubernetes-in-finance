@@ -1,0 +1,20 @@
+---
+# Clock discipline for VM-hosted nodes.
+#
+# Ubuntu's chrony default is "makestep 1 3": the clock may be stepped only
+# during the first three updates after chronyd starts. After a Multipass/QEMU
+# host suspend, resumed VMs can be minutes to hours off, and chrony is then
+# limited to slewing, which takes hours or days. Kubernetes and etcd do not
+# tolerate that skew (see docs/incidents/2026-11-21-clock-drift-after-host-suspend.md).
+#
+# A limit of -1 allows chrony to step whenever the offset exceeds the threshold.
+timesync_makestep_threshold_seconds: 1.0
+timesync_makestep_limit: -1
+
+# Verification gate: the play fails if a host is not synchronised within this
+# offset after configuration.
+timesync_max_offset_seconds: 0.5
+timesync_waitsync_tries: 30
+timesync_waitsync_interval_seconds: 2
+
+timesync_chrony_config: /etc/chrony/chrony.conf
