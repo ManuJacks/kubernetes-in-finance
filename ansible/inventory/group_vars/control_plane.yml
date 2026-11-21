@@ -1,0 +1,5 @@
+---
+# etcd backup configuration for control plane nodes
+etcd_backup_use_nfs: true
+etcd_backup_nfs_server: "10.97.0.1"
+etcd_backup_nfs_export: "/srv/k8s-etcd-backups"
