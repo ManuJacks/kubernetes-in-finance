@@ -9,9 +9,26 @@
   ansible.posix.sysctl:
     name: net.ipv4.ip_nonlocal_bind
     value: "1"
+    # Must live under /etc/sysctl.d: on Ubuntu 26.04 systemd-sysctl no longer
+    # reads /etc/sysctl.conf, so the module default is lost on reboot and
+    # HAProxy then cannot bind the VIP on the backup node (game day 2026-11-21).
+    sysctl_file: /etc/sysctl.d/90-haproxy-nonlocal-bind.conf
     state: present
     sysctl_set: true
     reload: true
+
+- name: Remove the legacy setting from /etc/sysctl.conf
+  ansible.builtin.lineinfile:
+    path: /etc/sysctl.conf
+    regexp: '^\s*net\.ipv4\.ip_nonlocal_bind\s*='
+    state: absent
+
+- name: Verify non-local bind is active
+  ansible.builtin.command:
+    cmd: sysctl -n net.ipv4.ip_nonlocal_bind
+  register: haproxy_nonlocal_bind
+  changed_when: false
+  failed_when: haproxy_nonlocal_bind.stdout != "1"
 
 - name: Deploy HAProxy configuration
   ansible.builtin.template:

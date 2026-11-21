@@ -49,6 +49,14 @@ load balancers.
 successfully moved to LB2 when Keepalived stopped on LB1, then returned
 to LB1 when its Keepalived service restarted.
 
+**Update 2026-11-21:** that test stopped Keepalived but never rebooted a
+load-balancer VM. The [game day](../gameday/2026-11-21-api-availability.md)
+found that a reboot exposed two defects: `ip_nonlocal_bind` was not persisted
+(HAProxy could not start), and STP on `br-api-frontend` blocked the rebooted
+VM's port for the 15 s forward delay, causing a dual-MASTER and a ~37 s
+outage. The bridge is now defined by `scripts/host-frontend-bridge.sh` with
+STP disabled; both fixes were verified by repeating the reboot.
+
 HAProxy has been installed and configured through Ansible.
 
 **Not yet validated:** HAProxy runtime health checks against the

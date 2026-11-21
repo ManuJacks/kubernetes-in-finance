@@ -168,3 +168,47 @@ def _c(cid, state, created, uid="uid-1"):
 def test_stale_container_selection(containers, expected_stale):
     _, stale = _select(containers)
     assert stale == expected_stale
+
+
+# --- persistence of kernel settings ----------------------------------------
+
+
+def _all_tasks():
+    for path in sorted(
+        list((__import__("pathlib").Path(ANSIBLE) / "roles").rglob("tasks/*.yml"))
+        + list((__import__("pathlib").Path(ANSIBLE) / "playbooks").glob("*.yml"))
+    ):
+        data = yaml.safe_load(path.read_text()) or []
+        plays = data if isinstance(data, list) else [data]
+        for item in plays:
+            for key in ("tasks", "pre_tasks", "post_tasks"):
+                for task in item.get(key, []) if isinstance(item, dict) else []:
+                    yield path, task
+            if isinstance(item, dict) and not any(k in item for k in ("hosts", "tasks")):
+                yield path, item
+
+
+def test_sysctl_settings_persist_under_sysctl_d():
+    """Regression (game day 2026-11-21): settings written to /etc/sysctl.conf
+    are not applied at boot on Ubuntu 26.04, so HAProxy could not bind the VIP
+    after a load-balancer reboot."""
+    found = 0
+    for path, task in _all_tasks():
+        module = task.get("ansible.posix.sysctl")
+        if module is None:
+            continue
+        found += 1
+        assert str(module.get("sysctl_file", "")).startswith("/etc/sysctl.d/"), (
+            f"{path}: sysctl task {task.get('name')!r} must set sysctl_file under /etc/sysctl.d/"
+        )
+    assert found, "expected at least one ansible.posix.sysctl task"
+
+
+def test_frontend_bridge_disables_stp_and_never_reactivates_existing_bridge():
+    """Regression (game day 2026-11-21): STP on br-api-frontend caused a
+    dual-MASTER and a ~37 s outage after a load-balancer reboot."""
+    script = open(os.path.join(ROOT, "scripts", "host-frontend-bridge.sh")).read()
+    assert "bridge.stp no" in script
+    ensure_existing = script.split("nmcli connection modify", 1)[1].split("fi", 1)[0]
+    assert "nmcli device reapply" in ensure_existing
+    assert "connection up" not in ensure_existing, "must not tear down a live bridge"
