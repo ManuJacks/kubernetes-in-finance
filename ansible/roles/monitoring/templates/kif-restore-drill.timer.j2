@@ -1,0 +1,11 @@
+# Managed by Ansible (roles/monitoring) — do not edit manually.
+[Unit]
+Description=Weekly isolated etcd restore drill
+
+[Timer]
+OnCalendar={{ monitoring_drill_schedule }}
+Persistent=true
+RandomizedDelaySec=15min
+
+[Install]
+WantedBy=timers.target

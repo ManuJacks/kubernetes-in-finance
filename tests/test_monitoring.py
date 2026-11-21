@@ -74,3 +74,37 @@ def test_grafana_password_not_in_repository():
     assert "lookup('ansible.builtin.password'" in tasks
     assert "secrets/grafana-admin-password" in tasks
     assert "no_log: true" in tasks
+
+
+def test_alertmanager_webhook_urls_are_not_in_the_repository():
+    """The ntfy topic is a credential: only url_file may be used."""
+    config = yaml.safe_load(read(MON, "alertmanager", "alertmanager.yml"))
+    for receiver in config["receivers"]:
+        for hook in receiver.get("webhook_configs", []):
+            assert "url" not in hook, receiver["name"]
+            assert hook["url_file"].startswith("/etc/alertmanager/secrets/")
+    assert "ntfy.sh/" not in read(MON, "alertmanager", "alertmanager.yml")
+
+
+def test_every_alert_has_a_routable_severity():
+    """Alertmanager routes on severity; an unlabelled alert would only reach the default."""
+    rules_dir = os.path.join(MON, "prometheus", "rules")
+    for fname in os.listdir(rules_dir):
+        for group in yaml.safe_load(read(rules_dir, fname))["groups"]:
+            for rule in group["rules"]:
+                if "alert" in rule:
+                    assert rule["labels"]["severity"] in {"page", "ticket"}, rule["alert"]
+                    assert rule["annotations"].get("runbook"), rule["alert"]
+
+
+def test_backup_status_is_recorded_on_every_exit():
+    script = read(ROOT, "ansible", "roles", "etcd-backup", "templates", "etcd-backup.sh.j2")
+    assert "trap write_status EXIT" in script
+    # The status trap must be installed before any step that can fail.
+    assert script.index("trap write_status EXIT") < script.index("mountpoint -q")
+
+
+def test_drill_timer_runs_the_drill_script():
+    service = read(ROLE, "templates", "kif-restore-drill.service.j2")
+    assert "scripts/drills/etcd-restore-drill.sh" in service
+    assert "OnCalendar={{ monitoring_drill_schedule }}" in read(ROLE, "templates", "kif-restore-drill.timer.j2")

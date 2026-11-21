@@ -10,13 +10,26 @@ RETENTION_DAYS="{{ etcd_backup_retention_days }}"
 REQUIRE_MOUNT="{{ 'true' if (etcd_backup_require_mount | bool or etcd_backup_use_nfs | bool) else 'false' }}"
 NODE_NAME="${NODE_NAME:-$(hostname -s 2>/dev/null || hostname)}"
 
+# Record the outcome of every attempt for monitoring (backup success KPI).
+# The status file lives next to the snapshots so the host collector sees it.
+STATUS_FILE="${BACKUP_DIR}/.etcd-backup-status-${NODE_NAME}"
+write_status() {
+  local rc=$?
+  local ok=0
+  [ "$rc" -eq 0 ] && ok=1
+  printf '%s %s\n' "$(date +%s)" "$ok" >"${STATUS_FILE}.tmp" && mv "${STATUS_FILE}.tmp" "${STATUS_FILE}" || true
+}
+trap write_status EXIT
+
 # Prevent overlapping control-plane timers from writing duplicate snapshots at
 # the same time when they share an external backup directory.
 LOCK_FILE="${BACKUP_DIR}/.etcd-backup.lock"
 exec 9>"${LOCK_FILE}"
-if ! flock -n 9; then
-  echo "[$(date -u)] Another etcd backup is already running; exiting safely."
-  exit 0
+# Wait for the other node rather than skipping, so every node's hourly
+# attempt is recorded. A lock held for 2 minutes is reported as a failure.
+if ! flock -w 120 9; then
+  echo "ERROR: another etcd backup held the lock for 120 s." >&2
+  exit 1
 fi
 
 DATE=$(date -u +"%Y%m%d_%H%M%SZ")

@@ -12,8 +12,9 @@ The `etcd-backup` Ansible role installs an automated snapshot mechanism managed 
 - **Service**: `/etc/systemd/system/etcd-backup.service`
 - **Timer**: `/etc/systemd/system/etcd-backup.timer`
 - **Backup Directory**: `/var/backups/etcd` (permissions `0700`, owner `root:root`)
-- **Retention**: 7 days (older snapshots automatically pruned per node)
-- **Schedule**: Daily at 02:00 UTC (customizable via `etcd_backup_schedule`)
+- **Retention**: 3 days (older snapshots automatically pruned per node; ~1.7 GB at ~8 MB per snapshot)
+- **Schedule**: Hourly on every control-plane node, with up to 5 minutes of randomized delay (`etcd_backup_schedule`, `etcd_backup_randomized_delay`). Nodes wait on a shared lock rather than skipping.
+- **Status**: every attempt writes `.etcd-backup-status-<node>` (`<unix time> <1|0>`) next to the snapshots; the host collector exports it as `etcd_backup_last_run_success{node}`
 - **Naming Convention**: `etcd-snapshot-<node_name>-<YYYYMMDD_HHMMSSZ>.db`
 - **Storage warning**: the current NFS target is off-VM but still shares the
   physical Multipass host; it is not protection from host loss.
@@ -186,9 +187,9 @@ is missing, unreadable, has zero keys/revision, or restore returns non-zero.
 - Restrict the NFS export to the control-plane subnet and avoid broad writable
   exports or `no_root_squash` unless a documented compatibility requirement
   exists.
-- The default daily schedule and seven-day retention imply roughly a 24-hour
-  recovery point objective and seven-day recovery window; confirm those values
-  against the event requirements.
+- The hourly schedule and three-day retention give a 1-hour recovery point
+  objective (monitored; see [docs/monitoring](../monitoring/README.md)) and a
+  three-day recovery window.
 
 ---
 

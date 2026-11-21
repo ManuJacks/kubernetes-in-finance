@@ -1,0 +1,10 @@
+# Managed by Ansible (roles/monitoring) — do not edit manually.
+[Unit]
+Description=Isolated etcd restore drill (RTO evidence; never touches live etcd)
+
+[Service]
+Type=oneshot
+WorkingDirectory={{ monitoring_repo_root }}
+Environment=TEXTFILE_DIR={{ monitoring_home }}/textfile
+ExecStart={{ monitoring_repo_root }}/scripts/drills/etcd-restore-drill.sh
+TimeoutStartSec=600

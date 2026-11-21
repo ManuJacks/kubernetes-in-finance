@@ -1,6 +1,7 @@
 ---
-# RPO objective: at most 24 hours of etcd data loss. Backups run daily at
-# 02:00 UTC (etcd-backup role); the alert allows 2 hours of slack.
+# RPO objective: at most 1 hour of etcd data loss. Every control-plane node
+# snapshots hourly (etcd-backup role, up to 5 minutes randomized delay); the
+# alert allows 30 minutes of slack before the objective is at risk.
 groups:
   - name: etcd-backup-rpo
     rules:
@@ -9,13 +10,38 @@ groups:
           (time() - etcd_backup_newest_snapshot_timestamp_seconds)
           and etcd_backup_newest_snapshot_timestamp_seconds > 0
 
+      - record: etcd_backup:last_run_age_seconds
+        expr: time() - etcd_backup_last_run_timestamp_seconds
+
+      # Backup success KPI: fraction of time each node's latest attempt was a
+      # success, over 7 days. Time-weighted, not a count of runs.
+      - record: etcd_backup:success_ratio_7d
+        expr: avg_over_time(etcd_backup_last_run_success[7d])
+
       - alert: EtcdBackupRPOAtRisk
-        expr: etcd_backup:newest_snapshot_age_seconds > 26 * 3600
+        expr: etcd_backup:newest_snapshot_age_seconds > 90 * 60
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: Newest etcd snapshot is older than 90 minutes; the 1-hour RPO objective is breached.
+          runbook: docs/runbooks/etcd-backup-restore.md
+
+      - alert: EtcdBackupFailed
+        expr: etcd_backup_last_run_success == 0
+        labels:
+          severity: ticket
+        annotations:
+          summary: "The most recent etcd backup on {{ $labels.node }} failed."
+          runbook: docs/runbooks/etcd-backup-restore.md
+
+      - alert: EtcdBackupNodeStale
+        expr: etcd_backup:last_run_age_seconds > 2 * 3600
         for: 10m
         labels:
           severity: ticket
         annotations:
-          summary: Newest etcd snapshot is older than 26 hours; the 24-hour RPO objective is at risk.
+          summary: "{{ $labels.node }} has not attempted an etcd backup for 2 hours (timer stopped or node down)."
           runbook: docs/runbooks/etcd-backup-restore.md
 
       - alert: EtcdBackupMissing

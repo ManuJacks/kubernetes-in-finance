@@ -15,6 +15,7 @@ monitoring_images:
   grafana: grafana/grafana:13.0.12@sha256:28476aa8096cd8d0f658a05a443b605fffb450e57f444335216175d604cfd23d
   blackbox: prom/blackbox-exporter:v0.29.1@sha256:ea1c7aa3ef3f307cd03e85f34abb604478ccb90b567fc690da0cd9776da76b13
   node_exporter: prom/node-exporter:v1.12.1@sha256:1b4e4438faca4dd7e001dd445d161a4a2091b0fededa84093b3a8dfeae1f1be0
+  alertmanager: prom/alertmanager:v0.34.2@sha256:39d8bb3966c694a124428a3a88fbcffd40bd069129ecd47c059f8a3f17c55f3b
   busybox: busybox:1.38.0@sha256:a46257e06c82ad85242d0d38077d0a52d9896389ca60a1a59d3463db586e5fa4
 
 # The host has ~2 GB free with all VMs running; keep the stack small.
@@ -24,3 +25,13 @@ monitoring_memory_limits:
   blackbox: 64m
   node_exporter: 64m
   backup_collector: 16m
+  alertmanager: 64m
+
+# Alert delivery: ntfy topic generated once and kept in the secrets directory.
+# Anyone who knows the topic can read and publish to it; treat it as a secret.
+monitoring_ntfy_server: https://ntfy.sh
+
+# Weekly isolated restore drill (user systemd timer; runs while the user's
+# systemd instance is active, catches up after downtime via Persistent=true).
+monitoring_drill_schedule: "Sun *-*-* 03:00:00"
+monitoring_repo_root: "{{ (playbook_dir ~ '/../..') | realpath }}"

@@ -1,6 +1,7 @@
 ---
-# Recovery drills provide RTO evidence. RTO cannot be measured continuously;
-# it is demonstrated by drills, which record their outcome and duration.
+# Recovery drills provide RTO evidence. A user systemd timer runs the restore
+# drill weekly (roles/monitoring); KPI: last successful drill within 7 days.
+# RTO cannot be measured continuously; drills record outcome and duration.
 groups:
   - name: recovery-drills
     rules:
@@ -16,9 +17,9 @@ groups:
           runbook: docs/runbooks/etcd-backup-restore.md
 
       - alert: PlatformDrillOverdue
-        expr: platform_drill:age_seconds > 30 * 86400
+        expr: platform_drill:age_seconds > 8 * 86400
         labels:
           severity: ticket
         annotations:
-          summary: No recovery drill has run in 30 days; recovery evidence is stale.
+          summary: No recovery drill has run in 8 days (weekly schedule); recovery evidence is stale.
           runbook: docs/runbooks/etcd-backup-restore.md
