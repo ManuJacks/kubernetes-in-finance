@@ -1,0 +1,20 @@
+---
+# Deploy the monitoring stack on the engineering host (no sudo required;
+# the user must be in the docker group).
+#
+#   ANSIBLE_CONFIG=ansible/ansible.cfg ansible-playbook ansible/playbooks/13-monitoring.yml
+#
+# Grafana: http://127.0.0.1:3000 (user admin; password in
+# ~/.local/share/kubernetes-in-finance/monitoring/secrets/grafana-admin-password)
+# Prometheus: http://127.0.0.1:9090
+
+- name: Deploy host monitoring
+  hosts: localhost
+  connection: local
+  become: false
+  gather_facts: true
+  vars:
+    # Inventory sets ansible_become for all hosts; a play variable outranks it.
+    ansible_become: false
+  roles:
+    - monitoring

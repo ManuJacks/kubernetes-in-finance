@@ -1,0 +1,26 @@
+---
+# Monitoring stack on the engineering host (Docker Compose, host networking,
+# every listener bound to 127.0.0.1). Configuration under monitoring/ is
+# portable; see docs/monitoring/README.md for the in-cluster migration path.
+monitoring_home: "{{ ansible_env.HOME }}/.local/share/kubernetes-in-finance/monitoring"
+monitoring_repo_dir: "{{ playbook_dir }}/../../monitoring"
+monitoring_kubeconfig: "{{ ansible_env.HOME }}/.kube/kubernetes-in-finance.conf"
+monitoring_backup_dir: /srv/k8s-etcd-backups
+monitoring_retention_time: 35d
+monitoring_retention_size: 1GB
+
+# Images pinned by digest (newest release at least two weeks old when chosen).
+monitoring_images:
+  prometheus: prom/prometheus:v3.16.0@sha256:e04987641b57704f408e31f6373ba4138ecf27cb4a165d24aabb6c38fddd0f06
+  grafana: grafana/grafana:13.0.12@sha256:28476aa8096cd8d0f658a05a443b605fffb450e57f444335216175d604cfd23d
+  blackbox: prom/blackbox-exporter:v0.29.1@sha256:ea1c7aa3ef3f307cd03e85f34abb604478ccb90b567fc690da0cd9776da76b13
+  node_exporter: prom/node-exporter:v1.12.1@sha256:1b4e4438faca4dd7e001dd445d161a4a2091b0fededa84093b3a8dfeae1f1be0
+  busybox: busybox:1.38.0@sha256:a46257e06c82ad85242d0d38077d0a52d9896389ca60a1a59d3463db586e5fa4
+
+# The host has ~2 GB free with all VMs running; keep the stack small.
+monitoring_memory_limits:
+  prometheus: 400m
+  grafana: 256m
+  blackbox: 64m
+  node_exporter: 64m
+  backup_collector: 16m
