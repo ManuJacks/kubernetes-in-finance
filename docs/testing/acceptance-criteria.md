@@ -1,5 +1,16 @@
 # Platform Acceptance Criteria
 
+## Worker replacement acceptance
+
+- [ ] Only the selected worker VM and inventory entry are changed.
+- [ ] Other VMs, control-plane nodes, and worker1 remain unchanged.
+- [ ] SSH access is restored with the existing public key; no private key is copied or committed.
+- [ ] Kubernetes, containerd, and CNI versions are compatible with the live cluster.
+- [ ] A stale Node is removed only after workload/storage assessment and explicit confirmation.
+- [ ] The replacement joins and reaches `Ready`; Cilium is healthy and workloads can schedule.
+- [ ] Repeating the workflow is safe: a healthy worker is not reset or rejoined.
+- [ ] Any preflight, version, workload, or readiness failure stops without unrelated deletion.
+
 ## 1. Purpose
 
 Define measurable acceptance criteria for the Kubernetes in Finance

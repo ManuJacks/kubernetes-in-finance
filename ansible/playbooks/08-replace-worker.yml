@@ -1,0 +1,190 @@
+---
+- name: Preflight replacement worker
+  hosts: "{{ replacement_worker | default('workers') }}"
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Require an explicit replacement target
+      ansible.builtin.assert:
+        that:
+          - replacement_worker is defined
+          - replacement_worker in groups['workers']
+          - groups['workers'] | length > 0
+        fail_msg: >-
+          Set replacement_worker to exactly one inventory worker. This playbook
+          never selects all workers implicitly.
+
+    - name: Check local kubelet membership
+      ansible.builtin.stat:
+        path: /etc/kubernetes/kubelet.conf
+      register: replacement_local_membership
+      when: inventory_hostname == replacement_worker
+
+    - name: Refuse to replace a healthy local worker
+      ansible.builtin.fail:
+        msg: >-
+          {{ inventory_hostname }} already has local kubelet membership. Use
+          the ordinary worker join playbook or investigate the node; this
+          replacement workflow will not reset or rejoin it.
+      when:
+        - inventory_hostname == replacement_worker
+        - replacement_local_membership.stat.exists
+
+- name: Inspect and optionally remove the stale Kubernetes Node
+  hosts: tf-ha-control1
+  become: true
+  gather_facts: false
+  vars:
+    replacement_confirmation: ""
+  tasks:
+    - name: Require an explicit replacement target
+      ansible.builtin.assert:
+        that:
+          - replacement_worker is defined
+          - replacement_worker in groups['workers']
+        fail_msg: >-
+          Set replacement_worker to exactly one inventory worker.
+
+    - name: Inspect pods assigned to the stale Node
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - --kubeconfig=/etc/kubernetes/admin.conf
+          - get
+          - pods
+          - --all-namespaces
+          - --field-selector
+          - "spec.nodeName={{ replacement_worker }}"
+          - -o
+          - wide
+      register: replacement_pods
+      changed_when: false
+
+    - name: Display the replacement assessment
+      ansible.builtin.debug:
+        msg: >-
+          Review the following pod assignment before continuing. This workflow
+          does not drain or delete workloads automatically:
+          {{ replacement_pods.stdout | default('no pods returned') }}
+
+    - name: Require explicit approval after the workload assessment
+      ansible.builtin.assert:
+        that: replacement_confirmation == 'REMOVE_STALE_NODE'
+        fail_msg: >-
+          Assessment complete; no Node was removed. Re-run with
+          -e replacement_worker={{ replacement_worker }}
+          -e replacement_confirmation=REMOVE_STALE_NODE only after reviewing
+          workloads and storage implications.
+
+    - name: Remove only the explicitly selected stale Node
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - --kubeconfig=/etc/kubernetes/admin.conf
+          - delete
+          - node
+          - "{{ replacement_worker }}"
+          - --ignore-not-found
+      register: stale_node_removal
+      changed_when: true
+      when: replacement_confirmation == 'REMOVE_STALE_NODE'
+
+- name: Generate short-lived replacement join credentials
+  hosts: tf-ha-control1
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Generate replacement token
+      ansible.builtin.command:
+        argv:
+          - kubeadm
+          - token
+          - create
+          - --ttl
+          - "30m"
+          - --description
+          - "ansible-worker-replacement-{{ replacement_worker }}"
+      register: replacement_token
+      changed_when: true
+      no_log: true
+
+    - name: Calculate cluster CA discovery hash
+      ansible.builtin.shell: |
+        set -o pipefail
+        openssl x509 -pubkey -in /etc/kubernetes/pki/ca.crt -noout \
+          | openssl pkey -pubin -outform DER \
+          | sha256sum | awk '{print $1}'
+      args:
+        executable: /bin/bash
+      register: replacement_ca_hash
+      changed_when: false
+
+- name: Join the replacement worker
+  hosts: workers
+  become: true
+  gather_facts: false
+  vars:
+    kubernetes_control_plane_endpoint: "10.97.3.100:6443"
+    kubernetes_cri_socket: "unix:///run/containerd/containerd.sock"
+  tasks:
+    - name: Stop standalone kubelet before kubeadm preflight
+      ansible.builtin.systemd_service:
+        name: kubelet
+        state: stopped
+      when: inventory_hostname == replacement_worker
+
+    - name: Join replacement worker
+      ansible.builtin.command:
+        argv:
+          - kubeadm
+          - join
+          - "{{ kubernetes_control_plane_endpoint }}"
+          - --token
+          - "{{ hostvars['tf-ha-control1'].replacement_token.stdout }}"
+          - --discovery-token-ca-cert-hash
+          - "sha256:{{ hostvars['tf-ha-control1'].replacement_ca_hash.stdout }}"
+          - --cri-socket
+          - "{{ kubernetes_cri_socket }}"
+      register: replacement_join
+      changed_when: true
+      no_log: true
+      when: inventory_hostname == replacement_worker
+
+    - name: Verify replacement kubelet membership exists
+      ansible.builtin.stat:
+        path: /etc/kubernetes/kubelet.conf
+      register: replacement_kubelet_conf
+      when: inventory_hostname == replacement_worker
+
+    - name: Require local kubelet membership after join
+      ansible.builtin.assert:
+        that: replacement_kubelet_conf.stat.exists
+        fail_msg: "kubeadm join returned, but kubelet membership was not created."
+      when: inventory_hostname == replacement_worker
+
+- name: Verify replacement Node readiness and clean up token
+  hosts: tf-ha-control1
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Wait for replacement Node to become Ready
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - --kubeconfig=/etc/kubernetes/admin.conf
+          - wait
+          - --for=condition=Ready
+          - "node/{{ replacement_worker }}"
+          - --timeout=5m
+      changed_when: false
+
+    - name: Revoke replacement token after use
+      ansible.builtin.command:
+        argv:
+          - kubeadm
+          - token
+          - delete
+          - "{{ hostvars['tf-ha-control1'].replacement_token.stdout }}"
+      changed_when: true
+      failed_when: false
+      no_log: true

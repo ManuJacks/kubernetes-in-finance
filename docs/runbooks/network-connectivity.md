@@ -43,7 +43,7 @@ networking layers are healthy.
 | tf-ha-control2 | 10.97.1.160 | Control plane |
 | tf-ha-control3 | 10.97.2.213 | Control plane |
 | tf-ha-worker1 | 10.97.0.2 | Worker |
-| tf-ha-worker2 | 10.97.1.111 | Worker |
+| tf-ha-worker2 | 10.97.1.76 | Worker (current DHCP address; verify before use) |
 
 ### Kubernetes network ranges
 

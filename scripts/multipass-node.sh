@@ -32,6 +32,19 @@ case "$ACTION" in
     DISK="$6"
     IMAGE="$7"
 
+    SSH_PUBLIC_KEY_PATH="${K8S_FINANCE_SSH_PUBLIC_KEY:-$HOME/.ssh/id_ed25519_k8s_finance_ansible.pub}"
+    if [[ ! -r "$SSH_PUBLIC_KEY_PATH" ]]; then
+      echo "ERROR: SSH public key not readable: $SSH_PUBLIC_KEY_PATH" >&2
+      exit 1
+    fi
+    CLOUD_INIT_FILE="$(mktemp)"
+    trap 'rm -f "$CLOUD_INIT_FILE"' EXIT
+    {
+      echo '#cloud-config'
+      echo 'ssh_authorized_keys:'
+      printf '  - %s\n' "$(<"$SSH_PUBLIC_KEY_PATH")"
+    } > "$CLOUD_INIT_FILE"
+
     if multipass info "$NAME" >/dev/null 2>&1; then
       echo "ERROR: $NAME already exists. Refusing to overwrite it." >&2
       exit 1
@@ -49,6 +62,7 @@ case "$ACTION" in
       --cpus "$CPUS" \
       --memory "$MEMORY" \
       --disk "$DISK" \
+      --cloud-init "$CLOUD_INIT_FILE" \
       "$IMAGE"
     ;;
 

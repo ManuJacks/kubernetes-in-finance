@@ -140,6 +140,7 @@ regulatory compliance.
 
 - All VMs share one physical host and failure domain.
 - Multipass zones simulate separation; they are not physical availability zones.
+
 - Local testing does not establish cloud-scale networking or resilience.
 - Compute and memory constrain workload and monitoring capacity.
 - Kubernetes bootstrap, Cilium networking and Flux reconciliation remain
@@ -147,6 +148,45 @@ regulatory compliance.
 - HAProxy TCP forwarding is configured, but end-to-end Kubernetes API
   availability has not yet been demonstrated.
 - VRRP VIP failover has been tested between the two existing load balancers.
+
+## Worker replacement recovery
+
+Terraform provisions the VM, Multipass assigns its DHCP address, the Ansible
+baseline installs compatible runtime/Kubernetes packages, and kubeadm join
+establishes Kubernetes membership. These are separate identities and checks.
+
+Before recovery, verify `multipass info`, the worker's current address, SSH
+access, control-plane/worker versions, assigned pods, and Cilium state. Update
+the ignored `ansible/inventory/hosts.yml` with the observed address; do not
+reuse an old DHCP address by assumption. The VM bootstrap installs only the
+existing public key (`~/.ssh/id_ed25519_k8s_finance_ansible.pub`); the private
+key remains on the operator host. Set `K8S_FINANCE_SSH_PUBLIC_KEY` only when
+the public key is stored elsewhere.
+
+Run the safe baseline first:
+
+```bash
+ANSIBLE_CONFIG=ansible/ansible.cfg ansible-playbook -i ansible/inventory/hosts.yml ansible/playbooks/01-common.yml --limit tf-ha-worker2
+```
+
+If the replacement has no local `/etc/kubernetes/kubelet.conf` but the old
+Node object remains, inspect its pods and persistent-storage implications. Only
+after explicit human approval run the narrowly targeted replacement workflow:
+
+```bash
+ANSIBLE_CONFIG=ansible/ansible.cfg ansible-playbook -i ansible/inventory/hosts.yml ansible/playbooks/08-replace-worker.yml \
+  -e replacement_worker=tf-ha-worker2 \
+  -e replacement_confirmation=REMOVE_STALE_NODE
+```
+
+This removes only the selected stale Node, never drains or deletes workloads,
+and stops on ambiguity. It uses a short-lived, hidden bootstrap token, revokes
+it after joining, and waits for the Node to become Ready. Healthy workers are
+not reset or rejoined by either join playbook. Verify Cilium pods, node
+readiness, scheduling, and application networking afterward. Stop and
+investigate on any version mismatch, unexpected workload, failed readiness, or
+token-cleanup error. Multipass zones remain simulated failure domains on one
+physical host, not independent availability zones.
 
 ## Engineering Principles
 

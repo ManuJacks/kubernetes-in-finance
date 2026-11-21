@@ -42,11 +42,16 @@
   ansible.builtin.apt:
     update_cache: true
 
+- name: Gather installed package facts
+  ansible.builtin.package_facts:
+    manager: auto
+
 - name: Release Kubernetes package holds before version change
   ansible.builtin.dpkg_selections:
     name: "{{ item }}"
     selection: install
   loop: "{{ kubernetes_packages }}"
+  when: item in ansible_facts.packages
 
 - name: Install pinned Kubernetes packages
   ansible.builtin.apt:

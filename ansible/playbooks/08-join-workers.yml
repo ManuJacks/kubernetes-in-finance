@@ -58,6 +58,51 @@
       changed_when: false
       failed_when: false
 
+    - name: Check whether this machine has local kubelet membership
+      ansible.builtin.stat:
+        path: /etc/kubernetes/kubelet.conf
+      register: worker_local_membership
+
+    - name: Stop on a stale Node object instead of silently skipping join
+      ansible.builtin.fail:
+        msg: >-
+          Kubernetes Node {{ inventory_hostname }} exists, but this machine has
+          no /etc/kubernetes/kubelet.conf. This is a replacement VM with a
+          stale Node object. Assess workloads and use the explicitly gated
+          worker replacement playbook before removing the old Node.
+      when:
+        - worker_node_lookup.rc == 0
+        - not worker_local_membership.stat.exists
+
+    - name: Verify a worker with local membership is Ready
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - --kubeconfig=/etc/kubernetes/admin.conf
+          - get
+          - node
+          - "{{ inventory_hostname }}"
+          - -o
+          - jsonpath={.status.conditions[?(@.type=="Ready")].status}
+      delegate_to: tf-ha-control1
+      become: true
+      register: worker_ready_status
+      changed_when: false
+      failed_when: false
+      when: worker_local_membership.stat.exists
+
+    - name: Refuse to rejoin a machine with existing local membership
+      ansible.builtin.assert:
+        that:
+          - worker_ready_status.stdout == 'True'
+        fail_msg: >-
+          {{ inventory_hostname }} has local kubelet membership but is not
+          Ready. Investigate it explicitly; this playbook will not reset or
+          rejoin a non-healthy worker.
+      when:
+        - worker_local_membership.stat.exists
+        - worker_node_lookup.rc == 0
+
     - name: Join worker to Kubernetes
       ansible.builtin.command:
         argv:
@@ -70,6 +115,8 @@
           - "sha256:{{ hostvars['tf-ha-control1'].kubeadm_worker_ca_hash.stdout }}"
           - --cri-socket
           - "{{ kubernetes_cri_socket }}"
-      when: worker_node_lookup.rc != 0
+      when:
+        - worker_node_lookup.rc != 0
+        - not worker_local_membership.stat.exists
       no_log: true
       register: worker_join
