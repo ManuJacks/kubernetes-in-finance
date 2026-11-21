@@ -9,7 +9,7 @@
   ],
   "timezone": "utc",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "refresh": "30s",
   "time": {
     "from": "now-6h",
@@ -376,7 +376,7 @@
       "id": 9,
       "type": "stat",
       "title": "RPO: age of newest etcd snapshot",
-      "description": "Maximum data loss if the cluster were restored now. Objective 24 h (daily backups at 02:00 UTC).",
+      "description": "Maximum data loss if the cluster were restored now. Objective 1 h (hourly backups on every control-plane node); pages at 90 min.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -411,11 +411,11 @@
               },
               {
                 "color": "orange",
-                "value": 86400
+                "value": 3600
               },
               {
                 "color": "red",
-                "value": 93600
+                "value": 5400
               }
             ]
           }
@@ -667,7 +667,7 @@
       "id": 14,
       "type": "stat",
       "title": "Last drill age",
-      "description": "Alert if no drill in 30 days.",
+      "description": "Weekly drill (user systemd timer). KPI: within 7 days; ticket at 8 days.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -706,7 +706,7 @@
               },
               {
                 "color": "red",
-                "value": 2592000
+                "value": 691200
               }
             ]
           }
@@ -738,7 +738,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "**RPO** is measured continuously from the backup store.\n\n**RTO cannot be measured continuously.** It is demonstrated by drills. Observed in the [2026-11-21 game day](https://github.com/ManuJacks/kubernetes-in-finance/blob/main/docs/gameday/2026-11-21-api-availability.md): load-balancer crash failover **3.6 s**, HAProxy failure **5.3 s**, etcd leader loss **no full outage**. These are lab measurements, not guarantees."
+        "content": "**RPO** is measured continuously from the backup store (objective 1 h).\n\n**RTO cannot be measured continuously.** It is demonstrated by drills. Observed in the [2026-11-21 game day](https://github.com/ManuJacks/kubernetes-in-finance/blob/main/docs/gameday/2026-11-21-api-availability.md): load-balancer crash failover **3.6 s**, HAProxy failure **5.3 s**, etcd leader loss **no full outage**. These are lab measurements, not guarantees."
       }
     },
     {
@@ -766,6 +766,563 @@
         },
         "viewMode": "list",
         "datasource": "Prometheus"
+      }
+    },
+    {
+      "id": 17,
+      "type": "row",
+      "title": "Recovery KPIs",
+      "gridPos": {
+        "x": 0,
+        "y": 31,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 18,
+      "type": "text",
+      "title": "KPI targets and evidence",
+      "gridPos": {
+        "x": 0,
+        "y": 32,
+        "w": 24,
+        "h": 11
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "| # | KPI | Target | How it is measured | Status |\n|---|---|---|---|---|\n| 1 | etcd RPO | **≤ 1 h** | Age of newest snapshot, continuous | Live (pages at 90 min) |\n| 2 | Backup success | **100 %** of attempts | Per-node outcome of every hourly run | Live (ticket on any failure) |\n| 3 | Restore drill freshness | **≤ 7 d** since last success | Weekly isolated restore drill (timer) | Live (ticket at 8 d) |\n| 4 | Control-plane failover RTO | **LB 30 s, control-plane node 60 s** | Game-day drills | Demonstrated 2026-11-21: 3.6 s / 5.3 s / no full outage |\n| 5 | Workload recovery | ≤ 6 min | Not yet drilled | **Defined, unmeasured** |\n| 6 | Control-plane node replacement | ≤ 30 min | Not yet drilled | **Defined, unmeasured** |\n| 7 | Full cluster restore RTO | ≤ 2 h | Not yet drilled (isolated restore only) | **Defined, unmeasured** |\n| 8 | API availability SLO | **99.9 %** over 30 d | `/readyz` through the VIP every 10 s | Live (burn-rate pages) |\n| 9 | Mean time to detect | **≤ 5 min** for a full API outage | `promtool` rule test: fast burn fires by 5 min | Tested in CI; delivery verified to ntfy |\n\nLab objectives for this platform, not production commitments. Unmeasured KPIs are listed so they are not mistaken for achieved ones."
+      }
+    },
+    {
+      "id": 19,
+      "type": "row",
+      "title": "etcd backups (hourly, every control-plane node)",
+      "gridPos": {
+        "x": 0,
+        "y": 43,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 20,
+      "type": "stat",
+      "title": "Last backup result per node",
+      "description": "Outcome of each node's most recent backup attempt.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 44,
+        "w": 8,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "etcd_backup_last_run_success",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "instant": true,
+          "legendFormat": "{{node}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "FAILED",
+                  "color": "red"
+                },
+                "1": {
+                  "text": "OK",
+                  "color": "green"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 21,
+      "type": "stat",
+      "title": "Backup success (7 d, time-weighted)",
+      "description": "KPI: 100%. Fraction of the last 7 days each node's latest attempt was a success.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 44,
+        "w": 8,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "etcd_backup:success_ratio_7d",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "instant": true,
+          "legendFormat": "{{node}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.99
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 22,
+      "type": "stat",
+      "title": "Last backup attempt age per node",
+      "description": "Hourly schedule with up to 5 min randomized delay. Ticket at 2 h.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 44,
+        "w": 8,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "etcd_backup:last_run_age_seconds",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "instant": true,
+          "legendFormat": "{{node}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 3900
+              },
+              {
+                "color": "red",
+                "value": 7200
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 23,
+      "type": "timeseries",
+      "title": "RPO over time: newest snapshot age",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 49,
+        "w": 24,
+        "h": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "etcd_backup:newest_snapshot_age_seconds",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "legendFormat": "newest snapshot age"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 5400
+              }
+            ]
+          },
+          "custom": {
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      }
+    },
+    {
+      "id": 24,
+      "type": "row",
+      "title": "Alert delivery (Alertmanager to ntfy)",
+      "gridPos": {
+        "x": 0,
+        "y": 56,
+        "w": 24,
+        "h": 1
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 25,
+      "type": "stat",
+      "title": "Alertmanager",
+      "description": "Whether Prometheus can reach Alertmanager.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 57,
+        "w": 6,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "up{job=\"alertmanager\"}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "DOWN",
+                  "color": "red"
+                },
+                "1": {
+                  "text": "UP",
+                  "color": "green"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 26,
+      "type": "stat",
+      "title": "Firing alerts by severity",
+      "description": "page = ntfy urgent priority; ticket = default priority.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 57,
+        "w": 6,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "count by (severity) (ALERTS{alertstate=\"firing\"}) or vector(0)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "instant": true,
+          "legendFormat": "{{severity}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 27,
+      "type": "stat",
+      "title": "Failed deliveries (24 h)",
+      "description": "Any failure raises AlertNotificationsFailing (visible here even if delivery is broken).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 57,
+        "w": 6,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(alertmanager_notifications_failed_total[24h]))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      }
+    },
+    {
+      "id": 28,
+      "type": "timeseries",
+      "title": "Notifications sent and failed",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 57,
+        "w": 6,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(alertmanager_notifications_total{integration=\"webhook\"}[1h]))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "legendFormat": "sent / h"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(increase(alertmanager_notifications_failed_total{integration=\"webhook\"}[1h]))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "legendFormat": "failed / h"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
       }
     }
   ],

@@ -2,8 +2,12 @@
 etcd_backup_dir: "/var/backups/etcd"
 etcd_backup_user: "root"
 etcd_backup_group: "root"
-etcd_backup_retention_days: 7
-etcd_backup_schedule: "*-*-* 02:00:00"  # Daily at 02:00 UTC
+# Hourly snapshots support a 1-hour RPO (docs/monitoring/README.md). Every
+# control-plane node snapshots; at ~8 MB each, 3 days of retention is ~1.7 GB.
+etcd_backup_retention_days: 3
+etcd_backup_schedule: "hourly"
+# Spread the three control-plane timers so they do not contend for the lock.
+etcd_backup_randomized_delay: "5min"
 
 # External NFS Storage Option
 # When enabled, the role ensures nfs-common is installed and mounts the NFS export to etcd_backup_dir

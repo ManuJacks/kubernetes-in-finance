@@ -22,7 +22,7 @@ fix is codified, tested and re-verified against the failure that exposed it.
 | [Game day 2026-11-21](docs/gameday/2026-11-21-api-availability.md) | API availability measured through VIP and control-plane failures; found and fixed two latent load-balancer defects that turned a 3.6 s failover into a ~37 s outage |
 | [Incident: clock drift after host suspend](docs/incidents/2026-11-21-clock-drift-after-host-suspend.md) | Clocks up to 4.5 h apart caused intermittent API 401s; an API server ran outside kubelet control for three days. Root-caused, fixed in code, verified live |
 | [Incident: etcd cross-zone NAT](docs/incidents/2026-11-05-etcd-cross-zone-nat.md) | etcd peer TLS failures caused by source NAT between zones |
-| [Monitoring: SLO, RPO and RTO evidence](docs/monitoring/README.md) | Prometheus and Grafana outside the cluster: 99.9% API availability SLO with burn-rate alerts, continuous RPO from the backup store, timed restore drills. Rules unit-tested in CI |
+| [Monitoring: SLO, RPO and RTO evidence](docs/monitoring/README.md) | Prometheus, Grafana and Alertmanager outside the cluster: nine recovery KPIs (1 h RPO from hourly backups, per-node backup success, weekly timed restore drills, 99.9% API availability SLO with burn-rate alerts, MTTD ≤ 5 min). Alerts delivered to ntfy, verified end to end. Rules and routing unit-tested in CI |
 | [Acceptance criteria](docs/testing/acceptance-criteria.md) | Each ticked item links to its evidence; unproven items stay open |
 
 ## Architecture
@@ -168,8 +168,10 @@ regulatory compliance.
   isolated restore of the snapshot has.
 - Monitoring runs on the engineering host, not in the cluster (worker
   capacity and storage do not allow it yet; see the migration path in
-  [docs/monitoring](docs/monitoring/README.md)). Alerts are not routed to any
-  paging system, and there are no Kubernetes object or VM metrics yet.
+  [docs/monitoring](docs/monitoring/README.md)). Alerts go to ntfy, a
+  best-effort public push service, not a paging system with escalation.
+  Prometheus failing is not detected (no external dead man's switch yet),
+  and there are no Kubernetes object or VM metrics yet.
 
 ## Worker replacement recovery
 

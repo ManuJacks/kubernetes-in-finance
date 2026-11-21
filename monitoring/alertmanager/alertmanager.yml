@@ -1,0 +1,35 @@
+---
+# Alert routing to ntfy (https://ntfy.sh). The topic name acts as the
+# credential, so webhook URLs are read from files outside the repository
+# (rendered by roles/monitoring into the secrets directory). ntfy formats the
+# Alertmanager payload with its built-in "alertmanager" template.
+route:
+  receiver: ntfy-ticket
+  group_by: [alertname, severity]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 24h
+  routes:
+    - matchers: ['severity="page"']
+      receiver: ntfy-page
+      repeat_interval: 4h
+    - matchers: ['severity="ticket"']
+      receiver: ntfy-ticket
+
+inhibit_rules:
+  # An empty backup store explains a stale newest snapshot.
+  - source_matchers: [alertname="EtcdBackupMissing"]
+    target_matchers: [alertname="EtcdBackupRPOAtRisk"]
+  # A fast burn already pages; do not also page for the slow burn.
+  - source_matchers: [alertname="ApiAvailabilityFastBurn"]
+    target_matchers: [alertname="ApiAvailabilitySlowBurn"]
+
+receivers:
+  - name: ntfy-page
+    webhook_configs:
+      - url_file: /etc/alertmanager/secrets/ntfy-page-url
+        send_resolved: true
+  - name: ntfy-ticket
+    webhook_configs:
+      - url_file: /etc/alertmanager/secrets/ntfy-ticket-url
+        send_resolved: true

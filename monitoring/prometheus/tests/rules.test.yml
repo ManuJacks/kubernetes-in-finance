@@ -3,6 +3,7 @@ rule_files:
   - ../rules/api-availability-slo.yml
   - ../rules/etcd-backup-rpo.yml
   - ../rules/drills.yml
+  - ../rules/alerting-pipeline.yml
 
 evaluation_interval: 30s
 
@@ -26,6 +27,25 @@ tests:
       - eval_time: 70m
         alertname: ApiAvailabilityProbeAbsent
         exp_alerts: []
+
+  # MTTD KPI (<= 5 minutes): a full outage starting at 60m must be firing
+  # (not just pending) by 65m. The 2-minute "for" plus the 5m window and
+  # evaluation interval leave about 1.5 minutes of margin.
+  - interval: 10s
+    input_series:
+      - series: 'probe_success{job="api-vip", instance="vip"}'
+        values: '1x360 0x60'
+    alert_rule_test:
+      - eval_time: 65m
+        alertname: ApiAvailabilityFastBurn
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              job: api-vip
+              instance: vip
+            exp_annotations:
+              summary: API availability error budget burning at more than 14.4x (2% of the 30-day budget per hour).
+              runbook: docs/gameday/2026-11-21-api-availability.md
 
   # A 4-second blip (like a load-balancer failover) must not page.
   - interval: 2s
@@ -68,7 +88,7 @@ tests:
               summary: The API availability probe is not reporting; the SLO is not being measured.
               runbook: docs/gameday/2026-11-21-api-availability.md
 
-  # RPO: newest snapshot frozen at t=1s, so its age exceeds 26 h.
+  # RPO: newest snapshot frozen at t=1s, so its age exceeds 90 minutes.
   # Samples every minute, as in production (instant-query lookback is 5 m).
   - interval: 1m
     input_series:
@@ -79,22 +99,22 @@ tests:
       - series: 'etcd_backup_collector_last_run_timestamp_seconds'
         values: '0+60x1700'
     alert_rule_test:
-      - eval_time: 27h
+      - eval_time: 2h
         alertname: EtcdBackupRPOAtRisk
         exp_alerts:
           - exp_labels:
-              severity: ticket
+              severity: page
             exp_annotations:
-              summary: Newest etcd snapshot is older than 26 hours; the 24-hour RPO objective is at risk.
+              summary: Newest etcd snapshot is older than 90 minutes; the 1-hour RPO objective is breached.
               runbook: docs/runbooks/etcd-backup-restore.md
-      - eval_time: 27h
+      - eval_time: 2h
         alertname: EtcdBackupCollectorStale
         exp_alerts: []
-      - eval_time: 20h
+      - eval_time: 80m
         alertname: EtcdBackupRPOAtRisk
         exp_alerts: []
 
-  # RPO: the newest snapshot is always exactly 30 minutes old: no alert,
+  # RPO: the newest snapshot is always exactly 30 minutes old (hourly backups): no alert,
   # and the recorded age is asserted so this test cannot pass vacuously.
   - interval: 1m
     input_series:
@@ -155,15 +175,84 @@ tests:
             exp_annotations:
               summary: The most recent recovery drill failed.
               runbook: docs/runbooks/etcd-backup-restore.md
-      - eval_time: 31d
+      - eval_time: 9d
         alertname: PlatformDrillOverdue
         exp_alerts:
           - exp_labels:
               severity: ticket
               drill: etcd_isolated_restore
             exp_annotations:
-              summary: No recovery drill has run in 30 days; recovery evidence is stale.
+              summary: No recovery drill has run in 8 days (weekly schedule); recovery evidence is stale.
               runbook: docs/runbooks/etcd-backup-restore.md
-      - eval_time: 29d
+      - eval_time: 7d
         alertname: PlatformDrillOverdue
         exp_alerts: []
+
+  # Backup success: one node's last attempt failed (ticket), another node
+  # stopped attempting (ticket after 2 h), a healthy node raises nothing.
+  - interval: 1m
+    input_series:
+      - series: 'etcd_backup_last_run_success{node="cp1"}'
+        values: '1x60 0x240'
+      - series: 'etcd_backup_last_run_timestamp_seconds{node="cp1"}'
+        values: '0+60x300'
+      - series: 'etcd_backup_last_run_success{node="cp2"}'
+        values: '1x300'
+      - series: 'etcd_backup_last_run_timestamp_seconds{node="cp2"}'
+        values: '0x300'
+      - series: 'etcd_backup_last_run_success{node="cp3"}'
+        values: '1x300'
+      - series: 'etcd_backup_last_run_timestamp_seconds{node="cp3"}'
+        values: '0+60x300'
+    alert_rule_test:
+      - eval_time: 3h
+        alertname: EtcdBackupFailed
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              node: cp1
+            exp_annotations:
+              summary: "The most recent etcd backup on cp1 failed."
+              runbook: docs/runbooks/etcd-backup-restore.md
+      - eval_time: 3h
+        alertname: EtcdBackupNodeStale
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              node: cp2
+            exp_annotations:
+              summary: "cp2 has not attempted an etcd backup for 2 hours (timer stopped or node down)."
+              runbook: docs/runbooks/etcd-backup-restore.md
+      - eval_time: 1h
+        alertname: EtcdBackupNodeStale
+        exp_alerts: []
+
+  # Alerting pipeline: Alertmanager down, and failed deliveries.
+  - interval: 1m
+    input_series:
+      - series: 'up{job="alertmanager", instance="am"}'
+        values: '0x20'
+      - series: 'alertmanager_notifications_failed_total{integration="webhook", instance="am", job="alertmanager"}'
+        values: '0x5 1x15'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: AlertmanagerDown
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              job: alertmanager
+              instance: am
+            exp_annotations:
+              summary: Alertmanager is not reachable; alerts are not being delivered.
+              runbook: docs/monitoring/README.md
+      - eval_time: 10m
+        alertname: AlertNotificationsFailing
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              integration: webhook
+              instance: am
+              job: alertmanager
+            exp_annotations:
+              summary: "Alertmanager failed to deliver notifications via webhook in the last 15 minutes."
+              runbook: docs/monitoring/README.md

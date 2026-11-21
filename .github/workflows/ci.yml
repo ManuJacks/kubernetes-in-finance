@@ -93,8 +93,8 @@ jobs:
 
       - name: ShellCheck
         run: |
-          shellcheck scripts/*.sh scripts/gameday/*.sh scripts/drills/*.sh
-          shellcheck -s sh monitoring/collectors/*.sh
+          shellcheck scripts/*.sh scripts/gameday/*.sh scripts/drills/*.sh scripts/alerting/*.sh
+          shellcheck -s sh monitoring/collectors/*.sh monitoring/alertmanager/tests/*.sh
 
       - name: pytest
         run: python -m pytest -v tests
@@ -103,6 +103,7 @@ jobs:
     name: Prometheus config and rule tests
     runs-on: ubuntu-latest
     env:
+      ALERTMANAGER_IMAGE: prom/alertmanager:v0.34.2@sha256:39d8bb3966c694a124428a3a88fbcffd40bd069129ecd47c059f8a3f17c55f3b
       PROMETHEUS_IMAGE: prom/prometheus:v3.16.0@sha256:e04987641b57704f408e31f6373ba4138ecf27cb4a165d24aabb6c38fddd0f06
     steps:
       - name: Checkout
@@ -119,6 +120,18 @@ jobs:
           docker run --rm -v "$PWD/monitoring/prometheus:/etc/prometheus:ro"
           --entrypoint promtool "$PROMETHEUS_IMAGE"
           test rules /etc/prometheus/tests/rules.test.yml
+
+      - name: amtool check-config
+        run: >-
+          docker run --rm -v "$PWD/monitoring/alertmanager:/etc/alertmanager:ro"
+          --entrypoint amtool "$ALERTMANAGER_IMAGE"
+          check-config /etc/alertmanager/alertmanager.yml
+
+      - name: Alertmanager routing tests
+        run: >-
+          docker run --rm -v "$PWD/monitoring/alertmanager:/etc/alertmanager:ro"
+          --entrypoint sh "$ALERTMANAGER_IMAGE"
+          /etc/alertmanager/tests/routes.sh /etc/alertmanager/alertmanager.yml
 
       - name: Dashboards are valid JSON
         run: for f in monitoring/grafana/dashboards/*.json; do python3 -m json.tool "$f" >/dev/null; done

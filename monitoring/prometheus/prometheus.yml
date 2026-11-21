@@ -9,6 +9,11 @@ global:
   external_labels:
     platform: kubernetes-in-finance
 
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["127.0.0.1:9093"]
+
 rule_files:
   - /etc/prometheus/rules/*.yml
 
@@ -16,6 +21,10 @@ scrape_configs:
   - job_name: prometheus
     static_configs:
       - targets: ["127.0.0.1:9090"]
+
+  - job_name: alertmanager
+    static_configs:
+      - targets: ["127.0.0.1:9093"]
 
   # Host metrics plus textfile metrics: etcd backup RPO and drill results.
   - job_name: node

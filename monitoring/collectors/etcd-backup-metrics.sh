@@ -25,6 +25,20 @@ while true; do
 
   tmp="$out.$$"
   {
+    # Per-node outcome of the most recent backup attempt, written by
+    # etcd-backup.sh as "<unix time> <1|0>" (backup success KPI).
+    echo "# HELP etcd_backup_last_run_success 1 if the node's most recent backup attempt succeeded."
+    echo "# TYPE etcd_backup_last_run_success gauge"
+    echo "# HELP etcd_backup_last_run_timestamp_seconds When the node last attempted a backup."
+    echo "# TYPE etcd_backup_last_run_timestamp_seconds gauge"
+    for s in "$src"/.etcd-backup-status-*; do
+      [ -e "$s" ] || continue
+      node=${s##*/.etcd-backup-status-}
+      read -r ts ok <"$s" || continue
+      case "$node$ts$ok" in *[!a-zA-Z0-9._-]*) continue ;; esac
+      echo "etcd_backup_last_run_success{node=\"$node\"} $ok"
+      echo "etcd_backup_last_run_timestamp_seconds{node=\"$node\"} $ts"
+    done
     echo "# HELP etcd_backup_snapshots Number of etcd snapshot files in the backup store."
     echo "# TYPE etcd_backup_snapshots gauge"
     echo "etcd_backup_snapshots $count"

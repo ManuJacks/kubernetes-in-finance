@@ -5,6 +5,7 @@ Requires=etcd-backup.service
 [Timer]
 OnCalendar={{ etcd_backup_schedule }}
 Persistent=true
+RandomizedDelaySec={{ etcd_backup_randomized_delay }}
 
 [Install]
 WantedBy=timers.target

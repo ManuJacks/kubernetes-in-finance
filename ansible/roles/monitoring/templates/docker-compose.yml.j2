@@ -56,6 +56,24 @@ services:
       - {{ monitoring_home }}/textfile:/textfile
     mem_limit: {{ monitoring_memory_limits.backup_collector }}
 
+  alertmanager:
+    image: {{ monitoring_images.alertmanager }}
+    restart: unless-stopped
+    network_mode: host
+    user: "65534:65534"
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+      - --web.listen-address=127.0.0.1:9093
+      # Single instance: disable the gossip cluster listener.
+      - --cluster.listen-address=
+    volumes:
+      - {{ monitoring_home }}/config/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - {{ monitoring_home }}/secrets/ntfy-page-url:/etc/alertmanager/secrets/ntfy-page-url:ro
+      - {{ monitoring_home }}/secrets/ntfy-ticket-url:/etc/alertmanager/secrets/ntfy-ticket-url:ro
+      - alertmanager-data:/alertmanager
+    mem_limit: {{ monitoring_memory_limits.alertmanager }}
+
   grafana:
     image: {{ monitoring_images.grafana }}
     restart: unless-stopped
@@ -77,5 +95,6 @@ services:
     mem_limit: {{ monitoring_memory_limits.grafana }}
 
 volumes:
+  alertmanager-data:
   prometheus-data:
   grafana-data:
