@@ -15,6 +15,8 @@ The `etcd-backup` Ansible role installs an automated snapshot mechanism managed 
 - **Retention**: 7 days (older snapshots automatically pruned per node)
 - **Schedule**: Daily at 02:00 UTC (customizable via `etcd_backup_schedule`)
 - **Naming Convention**: `etcd-snapshot-<node_name>-<YYYYMMDD_HHMMSSZ>.db`
+- **Storage warning**: the current NFS target is off-VM but still shares the
+  physical Multipass host; it is not protection from host loss.
 
 ### Applying the Playbook
 To deploy or update the backup job across all control planes:
@@ -155,6 +157,38 @@ Check that:
 - Total Key count > 0
 - Total Size matches expected storage size
 - Revision is non-zero
+
+### Isolated Restore Test
+
+Snapshot status is necessary but does not prove that a snapshot can be used
+for recovery. Perform this test periodically on a control-plane node using a
+temporary data directory. Do not use `/var/lib/etcd`, stop the live etcd
+member, or move the restored data into a live manifest path:
+
+```bash
+SNAPSHOT=$(sudo find /var/backups/etcd -maxdepth 1 -type f \
+  -name 'etcd-snapshot-*.db' -printf '%T@ %p\n' | sort -nr | head -1 | cut -d' ' -f2-)
+RESTORE_DIR=$(sudo mktemp -d /tmp/etcd-restore-audit.XXXXXX)
+sudo etcdutl snapshot restore "$SNAPSHOT" --data-dir="$RESTORE_DIR/data"
+sudo etcdutl snapshot status "$SNAPSHOT" --write-out=table
+sudo rm -rf "$RESTORE_DIR"
+```
+
+Record the snapshot name, revision, key count, restore exit status, and test
+date as recovery evidence. The test must stop and investigate if the snapshot
+is missing, unreadable, has zero keys/revision, or restore returns non-zero.
+
+### Operational Recommendations
+
+- Alert on failed `etcd-backup.service` executions and stale timer success.
+- Keep a second destination outside the Multipass physical host for host-loss
+  recovery.
+- Restrict the NFS export to the control-plane subnet and avoid broad writable
+  exports or `no_root_squash` unless a documented compatibility requirement
+  exists.
+- The default daily schedule and seven-day retention imply roughly a 24-hour
+  recovery point objective and seven-day recovery window; confirm those values
+  against the event requirements.
 
 ---
 

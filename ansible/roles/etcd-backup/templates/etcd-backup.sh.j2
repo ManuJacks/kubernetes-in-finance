@@ -10,6 +10,15 @@ RETENTION_DAYS="{{ etcd_backup_retention_days }}"
 REQUIRE_MOUNT="{{ 'true' if (etcd_backup_require_mount | bool or etcd_backup_use_nfs | bool) else 'false' }}"
 NODE_NAME="${NODE_NAME:-$(hostname -s 2>/dev/null || hostname)}"
 
+# Prevent overlapping control-plane timers from writing duplicate snapshots at
+# the same time when they share an external backup directory.
+LOCK_FILE="${BACKUP_DIR}/.etcd-backup.lock"
+exec 9>"${LOCK_FILE}"
+if ! flock -n 9; then
+  echo "[$(date -u)] Another etcd backup is already running; exiting safely."
+  exit 0
+fi
+
 DATE=$(date -u +"%Y%m%d_%H%M%SZ")
 SNAPSHOT_FILE="${BACKUP_DIR}/etcd-snapshot-${NODE_NAME}-${DATE}.db"
 
@@ -32,7 +41,7 @@ for f in "${CA_CERT}" "${CERT}" "${KEY}"; do
 done
 
 # Perform snapshot using etcdctl
-ETCDCTL_API=3 /usr/local/bin/etcdctl \
+/usr/local/bin/etcdctl \
   --endpoints="${ENDPOINT}" \
   --cacert="${CA_CERT}" \
   --cert="${CERT}" \
