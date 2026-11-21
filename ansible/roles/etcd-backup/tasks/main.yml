@@ -1,0 +1,43 @@
+---
+- name: Ensure backup directory exists
+  ansible.builtin.file:
+    path: "{{ etcd_backup_dir }}"
+    state: directory
+    owner: "{{ etcd_backup_user }}"
+    group: "{{ etcd_backup_group }}"
+    mode: "0700"
+
+- name: Deploy etcd backup script
+  ansible.builtin.template:
+    src: etcd-backup.sh.j2
+    dest: /usr/local/bin/etcd-backup.sh
+    owner: root
+    group: root
+    mode: "0750"
+
+- name: Deploy etcd backup systemd service
+  ansible.builtin.template:
+    src: etcd-backup.service.j2
+    dest: /etc/systemd/system/etcd-backup.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd daemon
+
+- name: Deploy etcd backup systemd timer
+  ansible.builtin.template:
+    src: etcd-backup.timer.j2
+    dest: /etc/systemd/system/etcd-backup.timer
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd daemon
+
+- name: Flush handlers before service state
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start etcd backup timer
+  ansible.builtin.systemd:
+    name: etcd-backup.timer
+    state: started
+    enabled: true

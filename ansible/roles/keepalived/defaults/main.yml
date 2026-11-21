@@ -2,3 +2,10 @@
 keepalived_package_name: keepalived
 keepalived_service_name: keepalived
 keepalived_config_path: /etc/keepalived/keepalived.conf
+# HAProxy health tracking
+keepalived_haproxy_check_command: /usr/bin/systemctl is-active --quiet haproxy
+keepalived_haproxy_check_interval: 2
+keepalived_haproxy_check_timeout: 2
+keepalived_haproxy_check_fall: 2
+keepalived_haproxy_check_rise: 2
+keepalived_haproxy_check_weight: -60

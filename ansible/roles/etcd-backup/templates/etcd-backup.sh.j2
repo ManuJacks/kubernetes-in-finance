@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+BACKUP_DIR="{{ etcd_backup_dir }}"
+ENDPOINT="{{ etcd_backup_endpoint }}"
+CA_CERT="{{ etcd_backup_ca_cert }}"
+CERT="{{ etcd_backup_cert }}"
+KEY="{{ etcd_backup_key }}"
+RETENTION_DAYS="{{ etcd_backup_retention_days }}"
+
+DATE=$(date -u +"%Y%m%d_%H%M%SZ")
+SNAPSHOT_FILE="${BACKUP_DIR}/etcd-snapshot-${DATE}.db"
+
+echo "[$(date -u)] Starting etcd backup to ${SNAPSHOT_FILE}..."
+
+# Check certificates exist
+for f in "${CA_CERT}" "${CERT}" "${KEY}"; do
+  if [ ! -f "$f" ]; then
+    echo "ERROR: Required certificate or key $f does not exist." >&2
+    exit 1
+  fi
+done
+
+# Perform snapshot using etcdctl
+ETCDCTL_API=3 /usr/local/bin/etcdctl \
+  --endpoints="${ENDPOINT}" \
+  --cacert="${CA_CERT}" \
+  --cert="${CERT}" \
+  --key="${KEY}" \
+  snapshot save "${SNAPSHOT_FILE}"
+
+# Set permissions
+chmod 0600 "${SNAPSHOT_FILE}"
+
+# Verify snapshot integrity using etcdutl or etcdctl
+if command -v /usr/local/bin/etcdutl >/dev/null 2>&1; then
+  echo "[$(date -u)] Verifying snapshot with etcdutl..."
+  /usr/local/bin/etcdutl snapshot status "${SNAPSHOT_FILE}" --write-out=table
+elif command -v /usr/local/bin/etcdctl >/dev/null 2>&1; then
+  echo "[$(date -u)] Verifying snapshot with etcdctl..."
+  ETCDCTL_API=3 /usr/local/bin/etcdctl snapshot status "${SNAPSHOT_FILE}" --write-out=table
+fi
+
+# Prune old snapshots exceeding retention policy
+echo "[$(date -u)] Pruning snapshots older than ${RETENTION_DAYS} days..."
+find "${BACKUP_DIR}" -type f -name "etcd-snapshot-*.db" -mtime +"${RETENTION_DAYS}" -print -delete
+
+echo "[$(date -u)] etcd backup completed successfully."

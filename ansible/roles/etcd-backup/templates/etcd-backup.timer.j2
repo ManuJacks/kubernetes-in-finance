@@ -1,0 +1,10 @@
+[Unit]
+Description=Timer for Kubernetes etcd backup
+Requires=etcd-backup.service
+
+[Timer]
+OnCalendar={{ etcd_backup_schedule }}
+Persistent=true
+
+[Install]
+WantedBy=timers.target

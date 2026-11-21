@@ -97,7 +97,7 @@ the existing deployment first.
 ### 7. Resilience and disaster recovery
 
 - [ ] Define workload recovery objectives (RTO and RPO).
-- [ ] Back up etcd and document backup protection.
+- [x] Back up etcd and document backup protection.
 - [ ] Back up required application and platform state.
 - [ ] Demonstrate restoration from backup.
 - [ ] Test node, control-plane and networking failures.
@@ -118,7 +118,7 @@ the existing deployment first.
 - [ ] Publish reproducible build and deployment instructions.
 - [ ] Maintain failure-injection and recovery test results.
 - [ ] Document known limitations and outstanding risks.
-- [ ] Provide runbooks for common operational scenarios.
+- [x] Provide runbooks for common operational scenarios.
 - [ ] Link validation evidence to acceptance criteria.
 
 ### 10. CI/CD and platform lifecycle automation
