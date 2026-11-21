@@ -55,6 +55,7 @@
     - name: Identify the running container and stale exited containers
       ansible.builtin.shell:
         cmd: >-
+          set -o pipefail;
           crictl ps -a --name '^{{ recover_component }}$' -o json |
           jq -c --arg uid '{{ recover_pod_uid }}' "$RECOVER_SELECT"
         executable: /bin/bash
@@ -117,9 +118,10 @@
     - name: Remove stale exited containers (re-checking each is still exited)
       ansible.builtin.shell:
         cmd: >-
-          set -e;
+          set -euo pipefail;
           test "$(crictl inspect {{ item.id }} | jq -r .status.state)" = CONTAINER_EXITED;
           crictl rm {{ item.id }}
+        executable: /bin/bash
       loop: "{{ recover_stale }}"
       loop_control:
         label: "attempt {{ item.metadata.attempt }} ({{ item.id[:12] }})"

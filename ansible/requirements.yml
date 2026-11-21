@@ -1,0 +1,10 @@
+---
+# Ansible collections used by the playbooks and roles.
+# Ranges match the versions the live cluster was built and tested with.
+collections:
+  - name: ansible.posix
+    version: ">=1.5.4,<2.0.0"
+  - name: community.general
+    version: ">=8.3.0,<9.0.0"
+  - name: kubernetes.core
+    version: ">=2.4.0,<3.0.0"

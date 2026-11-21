@@ -1,6 +1,6 @@
 # ADR-005: GitHub Actions for CI/CD and Platform Orchestration
 
-- **Status:** Accepted — implementation planned
+- **Status:** Accepted — amended 2026-11-21 (validation implemented; deployment deferred)
 - **Date:** 2026-11-05
 
 ## Context
@@ -99,3 +99,49 @@ platform is operational.
 Planned workflows include infrastructure provisioning, host configuration,
 load-balancer deployment, Kubernetes bootstrap, Cilium installation,
 node expansion and platform acceptance validation.
+
+## Amendment (2026-11-21): validation only on a public repository
+
+### Context
+
+This repository is public. GitHub advises against self-hosted runners for
+public repositories: a pull request from a fork can run arbitrary workflow
+code on the runner. Here, the planned runner would sit inside the private
+Multipass network with access to cluster-admin credentials and every node.
+
+### Decision
+
+1. **Implemented:** `.github/workflows/ci.yml` runs validation only, on
+   GitHub-hosted runners, with read-only repository permissions:
+   yamllint, ansible-lint (production profile), playbook syntax checks,
+   Terraform format and validate, ShellCheck, pytest and a secret scan. It
+   never connects to the cluster. Third-party actions are pinned to commit
+   SHAs.
+2. **Deferred:** automated deployment through a self-hosted runner. Until a
+   design below is adopted, changes are applied from the engineering
+   workstation with the existing playbooks, after CI passes and the change
+   is reviewed.
+
+### Preconditions before any self-hosted runner
+
+At least one of:
+
+- Make the repository private, accepting the loss of public visibility.
+- Run deployment jobs only for protected branches through a GitHub
+  Environment with required reviewers, with fork pull requests unable to
+  reach the runner (for example, a separate private deployment repository
+  that consumes reviewed commits from this one).
+
+And in all cases:
+
+- An ephemeral runner with a dedicated, least-privilege identity; no
+  long-lived cluster-admin credentials on the runner host.
+- Runner registration restricted to the deployment workflow only.
+
+### Consequences
+
+- CI gives every change the same validation without adding a privileged
+  component.
+- Deployment remains a manual, reviewed step; traceability relies on pull
+  requests and commit history rather than workflow runs.
+

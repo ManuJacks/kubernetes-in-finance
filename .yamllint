@@ -1,0 +1,25 @@
+---
+extends: default
+
+ignore: |
+  terraform/.terraform/
+  # Real inventory is gitignored and environment-specific.
+  ansible/inventory/hosts.yml
+
+rules:
+  # Match ansible-lint's limit; long URLs and Jinja expressions are common.
+  line-length:
+    max: 160
+  # Ansible uses bare true/false and yes/no is not used in this repository.
+  truthy:
+    allowed-values: ["true", "false"]
+    check-keys: false
+  comments:
+    min-spaces-from-content: 2
+  comments-indentation: disable
+  # Required by ansible-lint compatibility.
+  braces:
+    max-spaces-inside: 1
+  octal-values:
+    forbid-implicit-octal: true
+    forbid-explicit-octal: true

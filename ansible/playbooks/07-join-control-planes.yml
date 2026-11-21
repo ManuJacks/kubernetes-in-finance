@@ -48,6 +48,8 @@
         - not control_plane_admin_conf.stat.exists
       no_log: true
       register: control_plane_join
+      # Guarded by `when`; a join always changes node state when it runs.
+      changed_when: true
       failed_when: false
 
     - name: Display control-plane join error

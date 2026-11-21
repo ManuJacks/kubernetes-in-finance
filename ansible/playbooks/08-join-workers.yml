@@ -120,3 +120,5 @@
         - not worker_local_membership.stat.exists
       no_log: true
       register: worker_join
+      # Guarded by `when`; a join always changes node state when it runs.
+      changed_when: true

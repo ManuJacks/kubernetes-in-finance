@@ -1,5 +1,7 @@
 # Kubernetes in Finance
 
+[![CI](https://github.com/ManuJacks/kubernetes-in-finance/actions/workflows/ci.yml/badge.svg)](https://github.com/ManuJacks/kubernetes-in-finance/actions/workflows/ci.yml)
+
 ## A Financial Services Platform Engineering Blueprint
 
 A hands-on platform engineering project exploring how to design, provision,
@@ -214,6 +216,26 @@ ANSIBLE_CONFIG=ansible/ansible.cfg ansible-playbook -i ansible/inventory/hosts.y
 ```
 
 The playbook refuses to act unless that exact condition is present.
+
+## Continuous integration
+
+Every push and pull request to `main` or `development` is validated on
+GitHub-hosted runners: yamllint, ansible-lint (`production` profile),
+syntax checks of every playbook, `terraform fmt` and `validate`,
+ShellCheck, pytest and a secret scan. CI never connects to the cluster;
+deployment stays a reviewed manual step (see
+[ADR-005](docs/decisions/ADR-005-github-actions-orchestration.md)).
+
+Run the same checks locally:
+
+```bash
+pip install "ansible-core==2.21.6" "ansible-lint==26.11.0" "yamllint==1.38.0" pytest
+ansible-galaxy collection install -r ansible/requirements.yml
+yamllint .
+(cd ansible && ANSIBLE_CONFIG=ansible.cfg ansible-lint -c ../.ansible-lint playbooks/ roles/)
+terraform -chdir=terraform fmt -check -recursive
+python3 -m pytest tests
+```
 
 ## Engineering Principles
 

@@ -71,13 +71,13 @@
         time_sync_epochs: >-
           {{ ansible_play_hosts | map('extract', hostvars, ['time_sync_epoch', 'stdout'])
              | map('float') | list }}
+        time_sync_spread: >-
+          {{ ((time_sync_epochs | max | float) - (time_sync_epochs | min | float)) | round(2) }}
         # Allow for sequential SSH round-trips when sampling.
         time_sync_tolerance_seconds: 5
       ansible.builtin.assert:
         that:
-          - (time_sync_epochs | max) - (time_sync_epochs | min) <= time_sync_tolerance_seconds
-        fail_msg: >-
-          Host clocks disagree by {{ ((time_sync_epochs | max) - (time_sync_epochs | min)) | round(2) }}s.
-        success_msg: >-
-          Host clocks agree within {{ ((time_sync_epochs | max) - (time_sync_epochs | min)) | round(2) }}s.
+          - time_sync_spread | float <= time_sync_tolerance_seconds | float
+        fail_msg: "Host clocks disagree by {{ time_sync_spread }}s."
+        success_msg: "Host clocks agree within {{ time_sync_spread }}s."
       ignore_errors: "{{ ansible_check_mode }}"

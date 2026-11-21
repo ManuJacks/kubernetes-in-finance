@@ -1,0 +1,19 @@
+---
+# ansible-lint configuration.
+profile: production
+offline: true
+
+exclude_paths:
+  - .github/
+  - terraform/
+  # Real inventory is gitignored and environment-specific.
+  - ansible/inventory/hosts.yml
+
+skip_list:
+  # Role names use hyphens (kubernetes-bootstrap, etcd-backup, ...). Renaming
+  # roles would churn every playbook for no functional gain.
+  - role-name
+  # Role variables predate the prefix convention and are shared across roles
+  # and group_vars on the live cluster. Renaming them is a coordinated change
+  # with real breakage risk; tracked separately rather than done for lint.
+  - var-naming[no-role-prefix]

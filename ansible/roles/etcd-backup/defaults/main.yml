@@ -3,7 +3,7 @@ etcd_backup_dir: "/var/backups/etcd"
 etcd_backup_user: "root"
 etcd_backup_group: "root"
 etcd_backup_retention_days: 7
-etcd_backup_schedule: "*-*-* 02:00:00" # Daily at 02:00 UTC
+etcd_backup_schedule: "*-*-* 02:00:00"  # Daily at 02:00 UTC
 
 # External NFS Storage Option
 # When enabled, the role ensures nfs-common is installed and mounts the NFS export to etcd_backup_dir

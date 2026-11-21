@@ -1,3 +1,4 @@
+---
 # Frontend network
 load_balancer_interface: eth1
 load_balancer_vip: 10.97.3.100
