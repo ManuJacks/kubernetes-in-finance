@@ -2,18 +2,28 @@
 
 [![CI](https://github.com/ManuJacks/kubernetes-in-finance/actions/workflows/ci.yml/badge.svg)](https://github.com/ManuJacks/kubernetes-in-finance/actions/workflows/ci.yml)
 
-## A Financial Services Platform Engineering Blueprint
+**What does it take to run Kubernetes where an outage or lost data has a regulator attached?**
 
-**What does it take to *prove* a Kubernetes platform is resilient, rather than assume it?**
+In financial services, "highly available" isn't a diagram; it's a number you
+can defend. How long can the API be down? How much data can be lost? How fast
+can you recover, and how do you *know*?
 
-A hands-on platform engineering project that designs, provisions and operates
-a highly available Kubernetes platform (three control planes, a keepalived and
-HAProxy API VIP, Cilium) in a financial-services context, and then breaks it
-on purpose to measure what actually happens.
+This project builds a highly available Kubernetes platform (three control
+planes, a keepalived and HAProxy API VIP, Cilium; provisioned with Terraform
+and Ansible) and answers those questions with evidence rather than
+assumption:
 
-The emphasis is on evidence: resilience claims are backed by measured failure
-experiments, incidents are written up with their real root causes, and every
-fix is codified, tested and re-verified against the failure that exposed it.
+- **Break it on purpose and measure.** Failover times come from game-day
+  experiments, not vendor claims.
+- **Set objectives from measurements.** A 99.9% API availability SLO, a
+  1-hour RPO and recovery-time targets, monitored continuously or proven by drills.
+  Targets not yet demonstrated are labelled as such.
+- **Fix causes, in code.** Real incidents are written up with their root
+  causes, fixed in Ansible and re-verified against the failure that exposed
+  them.
+
+It is a lab platform, not a production deployment; the limitations are listed
+[below](#project-status-and-limitations).
 
 ### Evidence
 
