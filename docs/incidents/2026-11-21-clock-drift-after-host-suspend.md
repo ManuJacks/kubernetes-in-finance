@@ -1,8 +1,9 @@
 # Incident: Cluster-wide Clock Drift After Host Suspend
 
 - **Date:** 2026-11-21
-- **Status:** Root cause identified; preventive configuration implemented in
-  Ansible; not yet applied to the live cluster
+- **Status:** Resolved 2026-11-21. Clocks corrected on all hosts;
+  kube-apiserver on tf-ha-control2 returned to kubelet management without a
+  restart. API VIP refusals remain open (section 7).
 - **Severity:** Degraded control plane (intermittent API authentication
   failures, unmanaged API server, operator crash loops)
 - **Affected components:** chrony on all VMs; kube-apiserver token
@@ -90,14 +91,42 @@ name "kube-apiserver_..._189" is reserved for "f4851759..."
 ```
 
 `crictl` showed container attempt 189 (`f4851759...`) **running** and
-listening on `:6443`, created 2026-11-18. containerd completed the
-create, but the kubelet did not receive the result (the host journal
-shows a host shutdown on 2026-11-18 around that time; a causal link is
-likely but not proven). The kubelet keeps retrying with the same name, and
-containerd refuses because the name is reserved.
+listening on `:6443`. The API server served traffic, but the kubelet did
+not manage it, so manifest changes or upgrades on that node would not have
+taken effect.
 
-Impact: the API server served traffic, but the kubelet did not manage it,
-so manifest changes or upgrades on that node would not take effect.
+### Mechanism
+
+The kubelet treats the container with the newest `createdAt` as the
+current instance. The container records were:
+
+| Attempt | State | createdAt (epoch ns) |
+|---|---|---|
+| 188 | exited | 1795023874674674538 |
+| 189 | running | 1795006981848075111 |
+
+Attempt 188 was created first, but carries a creation time about 4.7 hours
+*later* than attempt 189, because the node clock jumped backwards between the
+two creates. The kubelet therefore concluded the API server had exited,
+and kept trying to create attempt 188 + 1 = 189, a name already held by the
+running container.
+
+### Recovery and what did not work
+
+1. Restarting the kubelet: **no effect** (still retried attempt 189).
+2. Restarting containerd, then the kubelet: **no effect**. The timestamps are
+   persisted, so no restart can fix the ordering.
+3. Removing the exited attempt-188 container (its last 300 log lines were
+   saved first): **resolved**. The kubelet adopted running container
+   `f4851759...` within seconds. The API server was never restarted; the pod
+   reports `1/1 Running` and `livez` returns `ok`.
+
+`12-recover-static-pod.yml` now implements step 3 only: it selects exited
+containers of the same pod whose `createdAt` is newer than the single
+running container, saves their logs to `/var/log/static-pod-recovery/`,
+re-checks each is still exited, and removes it. It refuses to act unless the
+exact condition is present. Run against the healthy pod afterwards, it
+refused with `changed=0`.
 
 ## 5. Related finding: API VIP connection refusals
 
@@ -111,19 +140,28 @@ remains open; see section 7.
 
 ## 6. Corrective and preventive actions
 
+The first live run of `11-time-sync.yml` stopped on the first host
+without changing anything: chronyd is confined by AppArmor to
+`/etc/chrony`, so it could not read Ansible's temporary file during
+validation. `--check` mode does not run `validate`, so the preview did not
+reveal this. The role now validates a copy placed under `/etc/chrony`.
+
+
 | Action | Implementation | Status |
 |---|---|---|
 | Allow chrony to step large offsets at any time | `timesync` role sets `makestep 1.0 -1` (validated with `chronyd -p`) | Implemented |
 | Fail the build if a host is not synchronised | `timesync` role asserts offset ≤ 0.5 s and leap status | Implemented |
 | Apply to every host | `timesync` added to `01-common.yml` and `02-load-balancers.yml` | Implemented |
-| Correct the live cluster safely | `11-time-sync.yml`: one host at a time, API `livez` and etcd health after each control-plane host, cluster-wide agreement check | Implemented; not yet run |
-| Recover a stuck static pod | `12-recover-static-pod.yml`: explicit target, refuses unless the exact condition is present, restarts the kubelet only (containerd optional) | Implemented; not yet run |
+| Correct the live cluster safely | `11-time-sync.yml`: one host at a time, API `livez` and etcd health after each control-plane host, cluster-wide agreement check | Run 2026-11-21: all 7 hosts within 6 ms of NTP, cluster agreement within 0.86 s; second run idempotent |
+| Recover a stuck static pod | `12-recover-static-pod.yml`: explicit target, refuses unless the exact condition is present, removes only stale exited containers after saving their logs | Run 2026-11-21 on tf-ha-control2: recovered without restarting the API server |
 | Regression tests | `tests/test_timesync_and_recovery.py` | Implemented |
 
 ## 7. Open items
 
-- Run `11-time-sync.yml`, then `12-recover-static-pod.yml` for
-  tf-ha-control2, and record the results here.
+- Confirm "service account token is not valid yet" 401s stop once real
+  time passes the issue time of tokens minted by fast API servers (a few
+  were still logged on tf-ha-control1 shortly after the correction, as
+  expected).
 - With clocks corrected, correlate future cilium-operator restarts with
   keepalived and HAProxy logs to find the cause of the VIP refusals.
 - Consider alerting on node clock offset (for example,
@@ -149,7 +187,15 @@ remains open; see section 7.
 - On VM-hosted clusters, host suspend is a fault-injection event. Clock
   discipline must handle large offsets after startup, not only at boot.
 - Clock skew destroys log correlation, which is the main tool for
-  diagnosing every other fault. Fix time first.
+  diagnosing every other fault. Fix time first. Even after correction,
+  `kubectl logs --since` stays unreliable for a while, because lines written
+  while a node was fast carry future timestamps; use the application's own
+  timestamps.
+- Clock jumps can corrupt orderings that software infers from timestamps
+  (here, the kubelet's choice of "latest" container). Restarts do not fix
+  persisted timestamps.
+- `--check` previews do not exercise `validate`; test the real apply path
+  on one low-risk host first.
 
 ## 10. Environment limitations
 

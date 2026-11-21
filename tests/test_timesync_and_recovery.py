@@ -3,8 +3,12 @@
 See docs/incidents/2026-11-21-clock-drift-after-host-suspend.md.
 """
 
+import json
 import os
+import shutil
+import subprocess
 
+import pytest
 import yaml
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -40,7 +44,10 @@ def test_makestep_allows_stepping_after_startup():
     lineinfile = makestep["ansible.builtin.lineinfile"]
     assert lineinfile["regexp"].lstrip("^\\s*").startswith("makestep")
     assert "timesync_makestep_limit" in lineinfile["line"]
-    assert "chronyd -p -f %s" in lineinfile["validate"]
+    validate = lineinfile["validate"]
+    assert "%s" in validate and "chronyd -p -f" in validate
+    # AppArmor confines chronyd to /etc/chrony; validation must read from there.
+    assert "/etc/chrony/" in validate.split("chronyd -p -f", 1)[1]
 
 
 def test_timesync_role_fails_when_clock_is_out_of_tolerance():
@@ -96,16 +103,68 @@ def test_recovery_refuses_unless_stuck_reservation_state_is_present():
     tasks = play["tasks"]
     names = [t["name"] for t in tasks]
     refuse = names.index("Refuse unless the stuck-reservation condition is present")
-    restart = names.index("Restart kubelet so it re-lists and adopts the running container")
-    assert refuse < restart, "preflight refusal must run before any restart"
+    remove = names.index("Remove stale exited containers (re-checking each is still exited)")
+    assert refuse < remove, "preflight refusal must run before any removal"
 
     conditions = tasks[refuse]["ansible.builtin.assert"]["that"]
     assert "recover_waiting_reason == 'CreateContainerError'" in conditions
-    assert "recover_running_count | int == 1" in conditions
+    assert "recover_running | length == 1" in conditions
+    assert "recover_stale | length >= 1" in conditions
 
 
-def test_recovery_restarts_containerd_only_when_requested():
-    play = load("playbooks", "12-recover-static-pod.yml")[0]
-    assert play["vars"]["recover_restart_containerd"] is False
-    task = task_by_name(play["tasks"], "Optionally restart containerd")
-    assert task["when"] == "recover_restart_containerd | bool"
+def test_recovery_never_stops_or_restarts_anything():
+    text = open(os.path.join(ANSIBLE, "playbooks", "12-recover-static-pod.yml")).read()
+    for forbidden in ("crictl stop", "crictl rmp", "state: restarted", "state: stopped", "rm -f"):
+        assert forbidden not in text, forbidden
+
+
+def test_recovery_preserves_logs_before_removal():
+    tasks = load("playbooks", "12-recover-static-pod.yml")[0]["tasks"]
+    names = [t["name"] for t in tasks]
+    assert names.index("Preserve logs of stale exited containers") < names.index(
+        "Remove stale exited containers (re-checking each is still exited)"
+    )
+    remove = task_by_name(tasks, "Remove stale exited containers")
+    assert "CONTAINER_EXITED" in remove["ansible.builtin.shell"]["cmd"]
+
+
+def _select(containers):
+    tasks = load("playbooks", "12-recover-static-pod.yml")[0]["tasks"]
+    flt = task_by_name(tasks, "Identify the running container")["environment"]["RECOVER_SELECT"]
+    out = subprocess.run(
+        ["jq", "-c", "--arg", "uid", "uid-1", flt],
+        input=json.dumps({"containers": containers}),
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    result = json.loads(out)
+    return [c["id"] for c in result["running"]], [c["id"] for c in result["stale"]]
+
+
+def _c(cid, state, created, uid="uid-1"):
+    return {"id": cid, "state": state, "createdAt": created,
+            "metadata": {"attempt": 0}, "labels": {"io.kubernetes.pod.uid": uid}}
+
+
+@pytest.mark.skipif(shutil.which("jq") is None, reason="jq not installed")
+@pytest.mark.parametrize(
+    "containers,expected_stale",
+    [
+        # Observed on tf-ha-control2: exited attempt 188 has a later createdAt
+        # than running attempt 189 because the clock jumped backwards.
+        ([_c("a188", "CONTAINER_EXITED", "1795023874674674538"),
+          _c("r189", "CONTAINER_RUNNING", "1795006981848075111")], ["a188"]),
+        # Healthy history: exited container is older; nothing to remove.
+        ([_c("a188", "CONTAINER_EXITED", "1795000000000000000"),
+          _c("r189", "CONTAINER_RUNNING", "1795006981848075111")], []),
+        # Containers from another pod are never selected.
+        ([_c("x", "CONTAINER_EXITED", "1795099999000000000", uid="other"),
+          _c("r189", "CONTAINER_RUNNING", "1795006981848075111")], []),
+        # Without exactly one running container nothing is selected.
+        ([_c("a188", "CONTAINER_EXITED", "1795023874674674538")], []),
+    ],
+)
+def test_stale_container_selection(containers, expected_stale):
+    _, stale = _select(containers)
+    assert stale == expected_stale

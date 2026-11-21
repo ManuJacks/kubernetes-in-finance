@@ -17,7 +17,12 @@
     regexp: '^\s*makestep\s+'
     line: "makestep {{ timesync_makestep_threshold_seconds }} {{ timesync_makestep_limit }}"
     insertafter: EOF
-    validate: "chronyd -p -f %s"
+    # chronyd is confined by AppArmor to /etc/chrony, so it cannot read
+    # Ansible's temporary file directly; validate a copy placed there.
+    validate: >-
+      /bin/sh -c 'cp %s /etc/chrony/.ansible-validate.conf &&
+      chronyd -p -f /etc/chrony/.ansible-validate.conf >/dev/null;
+      rc=$?; rm -f /etc/chrony/.ansible-validate.conf; exit $rc'
   notify: Restart chrony
 
 - name: Enable and start chrony

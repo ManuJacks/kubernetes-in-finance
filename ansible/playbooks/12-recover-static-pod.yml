@@ -3,16 +3,20 @@
 # kubelet is stuck retrying CreateContainer:
 #
 #   Error: failed to reserve container name "<name>_<attempt>":
-#   name "<name>_<attempt>" is reserved for "<container-id>"
+#   name "<name>_<attempt>" is reserved for "<running-container-id>"
 #
-# Cause: containerd created the container, but the kubelet never received the
-# response (for example, the host was suspended or shut down mid-call). The
-# kubelet keeps retrying with the same name and containerd keeps refusing.
+# Mechanism (observed 2026-11-21 on tf-ha-control2, see
+# docs/incidents/2026-11-21-clock-drift-after-host-suspend.md): the kubelet
+# treats the container with the newest createdAt as current. After the node
+# clock jumped backwards, an older *exited* attempt carried a later createdAt
+# than the running attempt. The kubelet therefore believed the component had
+# exited and kept trying to create the next attempt, whose name belongs to the
+# running container. Restarting the kubelet or containerd does not help,
+# because the timestamps are persisted.
 #
-# Recovery restarts the kubelet so it re-lists containers through CRI and
-# adopts the running one. Running containers are not stopped. If the kubelet
-# still reports the error, set recover_restart_containerd=true to also restart
-# containerd (containers keep running under their shims).
+# Recovery removes only exited containers of the same pod whose createdAt is
+# newer than the running container, after saving their logs on the node. The
+# running container is never stopped; the kubelet adopts it.
 #
 #   ANSIBLE_CONFIG=ansible/ansible.cfg ansible-playbook \
 #     -i ansible/inventory/hosts.yml ansible/playbooks/12-recover-static-pod.yml \
@@ -24,9 +28,9 @@
   gather_facts: false
   vars:
     recover_component: kube-apiserver
-    recover_restart_containerd: false
     recover_kubeconfig: /etc/kubernetes/admin.conf
     recover_pod: "{{ recover_component }}-{{ inventory_hostname }}"
+    recover_log_dir: /var/log/static-pod-recovery
 
   tasks:
     - name: Require an explicit control-plane target and supported component
@@ -48,68 +52,100 @@
       register: recover_pod_before
       changed_when: false
 
-    - name: Read running containers for the component
-      ansible.builtin.command:
-        cmd: crictl ps --name {{ recover_component }} --state running -q
-      register: recover_running
+    - name: Identify the running container and stale exited containers
+      ansible.builtin.shell:
+        cmd: >-
+          crictl ps -a --name '^{{ recover_component }}$' -o json |
+          jq -c --arg uid '{{ recover_pod_uid }}' "$RECOVER_SELECT"
+        executable: /bin/bash
+      environment:
+        # Containers of this static pod; the running one; and exited ones whose
+        # createdAt is newer than the running one (the stale records that make
+        # the kubelet believe the component has exited).
+        RECOVER_SELECT: >-
+          [.containers[] | select(.labels["io.kubernetes.pod.uid"] == $uid)] as $c
+          | ($c | map(select(.state == "CONTAINER_RUNNING"))) as $r
+          | {running: $r,
+             stale: (if ($r | length) == 1
+                     then [$c[] | select(.state == "CONTAINER_EXITED"
+                           and ((.createdAt | tonumber) > ($r[0].createdAt | tonumber)))]
+                     else [] end)}
+      vars:
+        recover_pod_uid: >-
+          {{ (recover_pod_before.stdout | from_json).metadata.annotations['kubernetes.io/config.hash'] }}
+      register: recover_selection
       changed_when: false
 
     - name: Summarise preflight
-      vars:
-        recover_waiting: >-
-          {{ (recover_pod_before.stdout | from_json).status.containerStatuses[0].state.waiting | default({}) }}
       ansible.builtin.set_fact:
-        recover_waiting_reason: "{{ recover_waiting.reason | default('') }}"
-        recover_running_count: "{{ recover_running.stdout_lines | length }}"
+        recover_waiting_reason: >-
+          {{ (recover_pod_before.stdout | from_json).status.containerStatuses[0].state.waiting.reason | default('') }}
+        recover_running: "{{ (recover_selection.stdout | from_json).running }}"
+        recover_stale: "{{ (recover_selection.stdout | from_json).stale }}"
 
     - name: Refuse unless the stuck-reservation condition is present
       ansible.builtin.assert:
         that:
           - recover_waiting_reason == 'CreateContainerError'
-          - recover_running_count | int == 1
+          - recover_running | length == 1
+          - recover_stale | length >= 1
         fail_msg: >-
-          {{ recover_pod }} is not in the stuck-reservation state
-          (waiting reason '{{ recover_waiting_reason }}', running containers
-          {{ recover_running_count }}). Nothing changed; investigate manually.
+          {{ recover_pod }} is not in the stuck-reservation state (waiting
+          reason '{{ recover_waiting_reason }}', running containers
+          {{ recover_running | length }}, exited containers newer than the
+          running one {{ recover_stale | length }}). Nothing changed;
+          investigate manually.
 
-    - name: Restart kubelet so it re-lists and adopts the running container
-      ansible.builtin.systemd_service:
-        name: kubelet
-        state: restarted
+    - name: Create recovery log directory
+      ansible.builtin.file:
+        path: "{{ recover_log_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0750"
 
-    - name: Optionally restart containerd (running containers are preserved)
-      ansible.builtin.systemd_service:
-        name: containerd
-        state: restarted
-      when: recover_restart_containerd | bool
+    - name: Preserve logs of stale exited containers
+      ansible.builtin.shell:
+        cmd: >-
+          crictl logs {{ item.id }} >
+          {{ recover_log_dir }}/{{ recover_pod }}-attempt{{ item.metadata.attempt }}-{{ item.id[:12] }}.log 2>&1
+      loop: "{{ recover_stale }}"
+      loop_control:
+        label: "attempt {{ item.metadata.attempt }} ({{ item.id[:12] }})"
+      changed_when: true
+
+    - name: Remove stale exited containers (re-checking each is still exited)
+      ansible.builtin.shell:
+        cmd: >-
+          set -e;
+          test "$(crictl inspect {{ item.id }} | jq -r .status.state)" = CONTAINER_EXITED;
+          crictl rm {{ item.id }}
+      loop: "{{ recover_stale }}"
+      loop_control:
+        label: "attempt {{ item.metadata.attempt }} ({{ item.id[:12] }})"
+      changed_when: true
 
     - name: Wait for the static pod to report Ready
       ansible.builtin.command:
         cmd: >-
           kubectl --kubeconfig {{ recover_kubeconfig }} -n kube-system
           get pod {{ recover_pod }}
-          -o jsonpath={.status.containerStatuses[0].ready}
+          -o jsonpath={.status.containerStatuses[0].ready}/{.status.containerStatuses[0].containerID}
       register: recover_ready
       changed_when: false
-      until: recover_ready.stdout == 'true'
+      until: recover_ready.stdout.startswith('true/')
       retries: 30
       delay: 5
       failed_when: false
 
-    - name: Confirm exactly one running container remains
-      ansible.builtin.command:
-        cmd: crictl ps --name {{ recover_component }} --state running -q
-      register: recover_running_after
-      changed_when: false
-
-    - name: Assert recovery
+    - name: Assert recovery adopted the original running container
       ansible.builtin.assert:
         that:
-          - recover_ready.stdout == 'true'
-          - recover_running_after.stdout_lines | length == 1
+          - recover_ready.stdout.startswith('true/')
+          - recover_ready.stdout.endswith(recover_running[0].id)
         fail_msg: >-
-          {{ recover_pod }} did not recover (ready={{ recover_ready.stdout }},
-          running containers={{ recover_running_after.stdout_lines | length }}).
-          If the kubelet still reports the reservation error, re-run with
-          -e recover_restart_containerd=true.
-        success_msg: "{{ recover_pod }} is Ready and managed by the kubelet."
+          {{ recover_pod }} did not recover as expected ({{ recover_ready.stdout }}).
+          Logs of removed containers are in {{ recover_log_dir }}.
+        success_msg: >-
+          {{ recover_pod }} is Ready and the kubelet adopted running container
+          {{ recover_running[0].id[:12] }} without restarting it.
