@@ -5,6 +5,16 @@ global_defs {
     enable_script_security
 }
 
+vrrp_script chk_haproxy {
+    script "{{ keepalived_haproxy_check_command }}"
+    interval {{ keepalived_haproxy_check_interval }}
+    timeout {{ keepalived_haproxy_check_timeout }}
+    fall {{ keepalived_haproxy_check_fall }}
+    rise {{ keepalived_haproxy_check_rise }}
+    weight {{ keepalived_haproxy_check_weight }}
+    user root
+}
+
 vrrp_instance VI_API {
     state {{ keepalived_state }}
     interface {{ load_balancer_interface }}
@@ -12,6 +22,10 @@ vrrp_instance VI_API {
     priority {{ keepalived_priority }}
     advert_int {{ keepalived_advert_int }}
     version {{ keepalived_vrrp_version }}
+
+    track_script {
+        chk_haproxy
+    }
 
     virtual_ipaddress {
         {{ load_balancer_vip }}/{{ load_balancer_vip_cidr }} dev {{ load_balancer_interface }}

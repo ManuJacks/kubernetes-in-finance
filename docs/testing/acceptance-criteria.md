@@ -98,7 +98,7 @@ validation evidence and known limitations are documented.
 
 ## 9. Disaster Recovery and Resilience
 
-- [ ] etcd backup procedures are documented.
+- [x] etcd backup procedures are documented.
 - [ ] etcd restoration is tested.
 - [ ] Application data backup and restoration are tested.
 - [ ] Recovery Time Objectives (RTO) are defined.
@@ -106,6 +106,12 @@ validation evidence and known limitations are documented.
 - [ ] Recovery exercises record actual recovery times.
 - [ ] Backup copies are separated from the primary failure domain.
 - [ ] Recovery limitations are documented.
+
+**Evidence and procedures:**
+
+- `docs/runbooks/etcd-backup-restore.md`
+- `ansible/playbooks/10-etcd-backup.yml`
+- `ansible/roles/etcd-backup/`
 
 ## 10. Financial Workload Integrity
 

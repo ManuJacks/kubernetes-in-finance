@@ -41,3 +41,5 @@ ansible/inventory/hosts.yml
 # Kubernetes credentials
 *.kubeconfig
 *.kubeconfig.*
+__pycache__/
+.pytest_cache/

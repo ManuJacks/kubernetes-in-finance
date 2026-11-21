@@ -76,7 +76,7 @@ Trade-offs:
 - Join both workers.
 - Verify node readiness.
 - Validate API availability during individual control-plane failures.
-- Test etcd backup and restoration.
+- Test etcd backup and restoration (`docs/runbooks/etcd-backup-restore.md`).
 - Document certificate lifecycle and recovery procedures.
 
 ## Version management

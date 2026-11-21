@@ -1,0 +1,12 @@
+---
+etcd_backup_dir: "/var/backups/etcd"
+etcd_backup_user: "root"
+etcd_backup_group: "root"
+etcd_backup_retention_days: 7
+etcd_backup_schedule: "*-*-* 02:00:00" # Daily at 02:00 UTC
+
+# etcd TLS and endpoint configurations (kubeadm defaults)
+etcd_backup_endpoint: "https://127.0.0.1:2379"
+etcd_backup_ca_cert: "/etc/kubernetes/pki/etcd/ca.crt"
+etcd_backup_cert: "/etc/kubernetes/pki/etcd/server.crt"
+etcd_backup_key: "/etc/kubernetes/pki/etcd/server.key"
