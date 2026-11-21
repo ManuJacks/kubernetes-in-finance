@@ -7,11 +7,21 @@ CA_CERT="{{ etcd_backup_ca_cert }}"
 CERT="{{ etcd_backup_cert }}"
 KEY="{{ etcd_backup_key }}"
 RETENTION_DAYS="{{ etcd_backup_retention_days }}"
+REQUIRE_MOUNT="{{ 'true' if (etcd_backup_require_mount | bool or etcd_backup_use_nfs | bool) else 'false' }}"
+NODE_NAME="${NODE_NAME:-$(hostname -s 2>/dev/null || hostname)}"
 
 DATE=$(date -u +"%Y%m%d_%H%M%SZ")
-SNAPSHOT_FILE="${BACKUP_DIR}/etcd-snapshot-${DATE}.db"
+SNAPSHOT_FILE="${BACKUP_DIR}/etcd-snapshot-${NODE_NAME}-${DATE}.db"
 
-echo "[$(date -u)] Starting etcd backup to ${SNAPSHOT_FILE}..."
+# Safety check: if external mount is required, ensure target is a valid mount point
+if [ "${REQUIRE_MOUNT}" = "true" ]; then
+  if ! mountpoint -q "${BACKUP_DIR}"; then
+    echo "ERROR: Backup directory ${BACKUP_DIR} is not a mount point and external storage is required." >&2
+    exit 1
+  fi
+fi
+
+echo "[$(date -u)] Starting etcd backup for node '${NODE_NAME}' to ${SNAPSHOT_FILE}..."
 
 # Check certificates exist
 for f in "${CA_CERT}" "${CERT}" "${KEY}"; do
@@ -41,8 +51,8 @@ elif command -v /usr/local/bin/etcdctl >/dev/null 2>&1; then
   ETCDCTL_API=3 /usr/local/bin/etcdctl snapshot status "${SNAPSHOT_FILE}" --write-out=table
 fi
 
-# Prune old snapshots exceeding retention policy
-echo "[$(date -u)] Pruning snapshots older than ${RETENTION_DAYS} days..."
-find "${BACKUP_DIR}" -type f -name "etcd-snapshot-*.db" -mtime +"${RETENTION_DAYS}" -print -delete
+# Prune old snapshots for this specific node exceeding retention policy
+echo "[$(date -u)] Pruning snapshots for node '${NODE_NAME}' older than ${RETENTION_DAYS} days..."
+find "${BACKUP_DIR}" -type f -name "etcd-snapshot-${NODE_NAME}-*.db" -mtime +"${RETENTION_DAYS}" -print -delete
 
 echo "[$(date -u)] etcd backup completed successfully."

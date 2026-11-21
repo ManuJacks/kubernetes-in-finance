@@ -1,7 +1,7 @@
 # Runbook: etcd Backup and Disaster Recovery
 
 ## 1. Overview
-This procedure details how etcd snapshot backups are scheduled, verified, and restored on Kubernetes control-plane nodes in the HA topology.
+This procedure details how etcd snapshot backups are scheduled, verified, mounted via external/NFS storage, and restored on Kubernetes control-plane nodes in the HA topology.
 
 ---
 
@@ -12,14 +12,15 @@ The `etcd-backup` Ansible role installs an automated snapshot mechanism managed 
 - **Service**: `/etc/systemd/system/etcd-backup.service`
 - **Timer**: `/etc/systemd/system/etcd-backup.timer`
 - **Backup Directory**: `/var/backups/etcd` (permissions `0700`, owner `root:root`)
-- **Retention**: 7 days (older snapshots automatically pruned)
+- **Retention**: 7 days (older snapshots automatically pruned per node)
 - **Schedule**: Daily at 02:00 UTC (customizable via `etcd_backup_schedule`)
+- **Naming Convention**: `etcd-snapshot-<node_name>-<YYYYMMDD_HHMMSSZ>.db`
 
 ### Applying the Playbook
 To deploy or update the backup job across all control planes:
 ```bash
 cd ansible
-ansible-playbook -i inventory/hosts.yml playbooks/10-etcd-backup.yml
+ANSIBLE_CONFIG=ansible.cfg ansible-playbook -i inventory/hosts.yml playbooks/10-etcd-backup.yml
 ```
 
 ### Checking Timer and Job Status
@@ -45,7 +46,60 @@ sudo /usr/local/bin/etcd-backup.sh
 
 ---
 
-## 3. Manual / Local Snapshot Execution
+## 3. External & NFS Storage Configuration (Localhost / Remote NAS)
+
+To survive total VM loss or simulate production off-node storage, you can mount `/var/backups/etcd` to an external NFS server (e.g. your local Linux workstation, TrueNAS, or cloud storage like AWS EFS).
+
+### Setting up the Host NFS Server (Workstation / Homelab)
+
+1. **Install NFS server on your physical host**:
+   ```bash
+   sudo apt-get update && sudo apt-get install -y nfs-kernel-server
+   ```
+
+2. **Create the shared backup directory**:
+   ```bash
+   sudo mkdir -p /srv/nfs/k8s-backups
+   sudo chown -R nobody:nogroup /srv/nfs/k8s-backups
+   sudo chmod 777 /srv/nfs/k8s-backups
+   ```
+
+3. **Export the share for the Multipass VM subnet**:
+   Identify the Multipass subnet (e.g. `10.x.x.0/24`) and add an entry to `/etc/exports`:
+   ```text
+   /srv/nfs/k8s-backups 10.0.0.0/8(rw,sync,no_subtree_check,no_root_squash)
+   ```
+   Apply the exports:
+   ```bash
+   sudo exportfs -ra
+   sudo systemctl restart nfs-kernel-server
+   ```
+
+### Enabling NFS in Ansible
+
+Enable NFS in `ansible/inventory/hosts.yml` or `ansible/roles/etcd-backup/defaults/main.yml`:
+
+```yaml
+etcd_backup_use_nfs: true
+etcd_backup_nfs_server: "10.0.4.1" # Host machine IP reachable by VMs
+etcd_backup_nfs_export: "/srv/nfs/k8s-backups"
+etcd_backup_nfs_mount_opts: "rw,sync,hard,intr"
+```
+
+Re-run the playbook:
+```bash
+cd ansible
+ANSIBLE_CONFIG=ansible.cfg ansible-playbook -i inventory/hosts.yml playbooks/10-etcd-backup.yml
+```
+
+The role will:
+1. Install `nfs-common` on the control-plane nodes.
+2. Mount the NFS export at `/var/backups/etcd` in `/etc/fstab`.
+3. Enable safety guardrails: `etcd-backup.sh` verifies `mountpoint -q /var/backups/etcd` before snapshotting, preventing writing locally if external storage disconnects.
+
+---
+
+## 4. Manual / Local Snapshot Execution
 
 If you need to manually take a backup directly on a control-plane node or in a local testing environment without running the systemd service:
 
@@ -64,37 +118,38 @@ If you need to manually take a backup directly on a control-plane node or in a l
 
 2. Generate a timestamped snapshot:
    ```bash
+   NODE_NAME=$(hostname -s)
    TIMESTAMP=$(date -u +"%Y%m%d_%H%M%SZ")
    sudo ETCDCTL_API=3 etcdctl \
      --endpoints=https://127.0.0.1:2379 \
      --cacert=/etc/kubernetes/pki/etcd/ca.crt \
      --cert=/etc/kubernetes/pki/etcd/server.crt \
      --key=/etc/kubernetes/pki/etcd/server.key \
-     snapshot save "/var/backups/etcd/etcd-snapshot-${TIMESTAMP}.db"
+     snapshot save "/var/backups/etcd/etcd-snapshot-${NODE_NAME}-${TIMESTAMP}.db"
    ```
 
 3. Secure the snapshot file permissions:
    ```bash
-   sudo chmod 0600 "/var/backups/etcd/etcd-snapshot-${TIMESTAMP}.db"
+   sudo chmod 0600 "/var/backups/etcd/etcd-snapshot-${NODE_NAME}-${TIMESTAMP}.db"
    ```
 
 4. Verify snapshot status and integrity:
    ```bash
-   sudo etcdutl snapshot status "/var/backups/etcd/etcd-snapshot-${TIMESTAMP}.db" --write-out=table
+   sudo etcdutl snapshot status "/var/backups/etcd/etcd-snapshot-${NODE_NAME}-${TIMESTAMP}.db" --write-out=table
    ```
 
-5. Prune backups older than the retention period (e.g. 7 days):
+5. Prune backups for this node older than the retention period (e.g. 7 days):
    ```bash
-   sudo find /var/backups/etcd -type f -name "etcd-snapshot-*.db" -mtime +7 -print -delete
+   sudo find /var/backups/etcd -type f -name "etcd-snapshot-${NODE_NAME}-*.db" -mtime +7 -print -delete
    ```
 
 ---
 
-## 3. Snapshot Verification
+## 5. Snapshot Verification
 
 Every snapshot taken by the automated job is verified automatically. To verify any snapshot manually using `etcdutl` or `etcdctl`:
 ```bash
-sudo etcdutl snapshot status /var/backups/etcd/etcd-snapshot-<TIMESTAMP>.db --write-out=table
+sudo etcdutl snapshot status /var/backups/etcd/etcd-snapshot-<NODE_NAME>-<TIMESTAMP>.db --write-out=table
 ```
 Check that:
 - Total Key count > 0
@@ -103,7 +158,7 @@ Check that:
 
 ---
 
-## 4. Disaster Recovery & Restoration Procedure
+## 6. Disaster Recovery & Restoration Procedure
 
 > [!CAUTION]
 > Restoring etcd replaces cluster state. Follow this sequence strictly during a disaster recovery scenario.
@@ -125,9 +180,9 @@ sudo mv /var/lib/etcd /var/lib/etcd-backup-$(date +%s)
 ```
 
 ### Step 3: Restore the Snapshot
-Choose the desired verified snapshot:
+Choose the desired verified snapshot (from `/var/backups/etcd` or external NFS storage):
 ```bash
-sudo etcdutl snapshot restore /var/backups/etcd/etcd-snapshot-<TIMESTAMP>.db \
+sudo etcdutl snapshot restore /var/backups/etcd/etcd-snapshot-<NODE_NAME>-<TIMESTAMP>.db \
   --data-dir=/var/lib/etcd
 ```
 
