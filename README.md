@@ -4,13 +4,25 @@
 
 ## A Financial Services Platform Engineering Blueprint
 
-A hands-on platform engineering project exploring how to design, provision,
-secure, operate and validate a resilient Kubernetes platform in a
-financial-services context.
+**What does it take to *prove* a Kubernetes platform is resilient, rather than assume it?**
 
-The project demonstrates engineering judgement across infrastructure
-automation, high availability, security, observability, operational
-resilience, change governance and disaster recovery.
+A hands-on platform engineering project that designs, provisions and operates
+a highly available Kubernetes platform (three control planes, a keepalived and
+HAProxy API VIP, Cilium) in a financial-services context, and then breaks it
+on purpose to measure what actually happens.
+
+The emphasis is on evidence: resilience claims are backed by measured failure
+experiments, incidents are written up with their real root causes, and every
+fix is codified, tested and re-verified against the failure that exposed it.
+
+### Evidence
+
+| What | Result |
+|---|---|
+| [Game day 2026-11-21](docs/gameday/2026-11-21-api-availability.md) | API availability measured through VIP and control-plane failures; found and fixed two latent load-balancer defects that turned a 3.6 s failover into a ~37 s outage |
+| [Incident: clock drift after host suspend](docs/incidents/2026-11-21-clock-drift-after-host-suspend.md) | Clocks up to 4.5 h apart caused intermittent API 401s; an API server ran outside kubelet control for three days. Root-caused, fixed in code, verified live |
+| [Incident: etcd cross-zone NAT](docs/incidents/2026-11-05-etcd-cross-zone-nat.md) | etcd peer TLS failures caused by source NAT between zones |
+| [Acceptance criteria](docs/testing/acceptance-criteria.md) | Each ticked item links to its evidence; unproven items stay open |
 
 ## Architecture
 
@@ -147,9 +159,14 @@ regulatory compliance.
 - Compute and memory constrain workload and monitoring capacity.
 - Kubernetes bootstrap, Cilium networking and Flux reconciliation remain
   subject to implementation and validation.
-- HAProxy TCP forwarding is configured, but end-to-end Kubernetes API
-  availability has not yet been demonstrated.
-- VRRP VIP failover has been tested between the two existing load balancers.
+- End-to-end API availability through the VIP has been measured under
+  load-balancer and control-plane failures (see the game day). Failover
+  costs 3.6–5.3 s; a dead API server causes ~16 s of partial failure until
+  HAProxy removes it (tuning recommendation recorded, not applied).
+- A full cluster restore from an etcd snapshot has not been exercised; only an
+  isolated restore of the snapshot has.
+- No monitoring, SLOs or alerting are deployed yet; availability figures come
+  from game-day probes, not continuous measurement.
 
 ## Worker replacement recovery
 

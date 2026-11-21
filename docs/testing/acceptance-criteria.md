@@ -23,20 +23,39 @@ validation evidence and known limitations are documented.
 
 - [ ] Terraform can reproducibly provision the infrastructure.
 - [ ] Ansible configuration is repeatable and idempotent.
-- [ ] API VIP fails over between load balancers.
-- [ ] Kubernetes API remains accessible during an individual
+      _Partial evidence: `11-time-sync.yml` and `02-load-balancers.yml`
+      re-runs reported `changed=0` on 2026-11-21; other playbooks not yet
+      re-verified._
+- [x] API VIP fails over between load balancers.
+      _Evidence: [game day 2026-11-21](../gameday/2026-11-21-api-availability.md), E1 and E2c._
+- [x] Kubernetes API remains accessible during an individual
       load-balancer failure.
-- [ ] Three control-plane nodes maintain etcd quorum.
-- [ ] Loss of one control-plane node does not prevent cluster
+      _Evidence: [game day 2026-11-21](../gameday/2026-11-21-api-availability.md). Measured interruption 3.6 s (crash) and 5.3 s
+      (HAProxy failure); zero on failback after the STP and sysctl fixes._
+- [x] Three control-plane nodes maintain etcd quorum.
+      _Evidence: [game day 2026-11-21](../gameday/2026-11-21-api-availability.md), E3 (quorum held on 2/3 after leader loss)._
+- [x] Loss of one control-plane node does not prevent cluster
       operation.
+      _Evidence: [game day 2026-11-21](../gameday/2026-11-21-api-availability.md), E3: etcd leader powered off; a full incident
+      demo (deploy, diagnose, remediate, verify) passed during the outage._
 - [ ] Worker failure is detected and workloads recover where
       replica capacity permits.
-- [ ] Every host's clock is within 0.5 s of NTP and all hosts agree
-      within 5 s (`11-time-sync.yml`), including after a host
-      suspend/resume.
-- [ ] A control-plane static pod stuck in `CreateContainerError` with a
+- [x] Every host's clock is within 0.5 s of NTP and all hosts agree
+      within 5 s (`11-time-sync.yml`), including after a VM power-off and
+      reboot.
+      _Evidence: [incident 2026-11-21](../incidents/2026-11-21-clock-drift-after-host-suspend.md);
+      api-lb1-new at 0.0 s offset after forced power-off and reboot._
+- [ ] Clocks recover automatically after a desktop-host suspend/resume
+      (expected from `makestep 1.0 -1`; not yet re-tested).
+- [x] A control-plane static pod stuck in `CreateContainerError` with a
       reserved container name is recovered by `12-recover-static-pod.yml`
       without stopping the running container.
+      _Evidence: [incident 2026-11-21](../incidents/2026-11-21-clock-drift-after-host-suspend.md), section 4._
+- [x] An etcd snapshot restores successfully into an isolated data
+      directory. _Evidence: [game day 2026-11-21](../gameday/2026-11-21-api-availability.md), E4._
+- [ ] Full cluster recovery from an etcd snapshot (disruptive drill).
+- [x] A rebooted load balancer starts HAProxy and rejoins without a
+      dual-MASTER or extended outage. _Evidence: [game day 2026-11-21](../gameday/2026-11-21-api-availability.md), E2c._
 
 ## 3. Kubernetes Networking
 
