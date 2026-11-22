@@ -29,7 +29,9 @@ locals {
       zone   = "zone1"
       cpus   = 2
       memory = "2G"
-      disk   = "20G"
+      # Size at launch: part of the VM identity (triggers_replace).
+      launch_memory = "2G"
+      disk          = "20G"
     }
     control2 = {
       name   = "tf-ha-control2"
@@ -37,7 +39,9 @@ locals {
       zone   = "zone2"
       cpus   = 2
       memory = "2G"
-      disk   = "20G"
+      # Size at launch: part of the VM identity (triggers_replace).
+      launch_memory = "2G"
+      disk          = "20G"
     }
     control3 = {
       name   = "tf-ha-control3"
@@ -45,23 +49,31 @@ locals {
       zone   = "zone3"
       cpus   = 2
       memory = "2G"
-      disk   = "20G"
+      # Size at launch: part of the VM identity (triggers_replace).
+      launch_memory = "2G"
+      disk          = "20G"
     }
     worker1 = {
-      name   = "tf-ha-worker1"
-      role   = "worker"
-      zone   = "zone1"
-      cpus   = 1
-      memory = "1G"
-      disk   = "20G"
+      name = "tf-ha-worker1"
+      role = "worker"
+      zone = "zone1"
+      cpus = 1
+      # Running size, resized in place by terraform_data.node_memory.
+      memory = "1536M"
+      # Size at launch: part of the VM identity (triggers_replace).
+      launch_memory = "1G"
+      disk          = "20G"
     }
     worker2 = {
-      name   = "tf-ha-worker2"
-      role   = "worker"
-      zone   = "zone2"
-      cpus   = 1
-      memory = "1G"
-      disk   = "20G"
+      name = "tf-ha-worker2"
+      role = "worker"
+      zone = "zone2"
+      cpus = 1
+      # Running size, resized in place by terraform_data.node_memory.
+      memory = "1536M"
+      # Size at launch: part of the VM identity (triggers_replace).
+      launch_memory = "1G"
+      disk          = "20G"
     }
   }
 
@@ -102,19 +114,38 @@ resource "terraform_data" "kubernetes_node" {
     each.value.name,
     each.value.zone,
     each.value.cpus,
-    each.value.memory,
+    # launch_memory, not memory: changing the running size must resize the VM
+    # in place (node_memory below), never destroy and recreate it.
+    each.value.launch_memory,
     each.value.disk,
     var.ubuntu_image
   ]
 
   provisioner "local-exec" {
-    command = "bash '${path.module}/../scripts/multipass-node.sh' create '${each.value.name}' '${each.value.zone}' '${each.value.cpus}' '${each.value.memory}' '${each.value.disk}' '${var.ubuntu_image}'"
+    command = "bash '${path.module}/../scripts/multipass-node.sh' create '${each.value.name}' '${each.value.zone}' '${each.value.cpus}' '${each.value.launch_memory}' '${each.value.disk}' '${var.ubuntu_image}'"
   }
 
   provisioner "local-exec" {
     when    = destroy
     command = "bash '${path.module}/../scripts/multipass-node.sh' destroy '${self.input.name}'"
   }
+}
+
+# Running memory size, applied in place: drain, stop, resize, start, uncordon.
+# The script is a no-op when the size is unchanged, refuses control-plane
+# resizes, and serializes workers with a lock, so parallel provisioners never
+# take both workers down (PRB-2026-11-22-node-memory, action 3).
+resource "terraform_data" "node_memory" {
+  for_each = local.nodes
+
+  input            = each.value.memory
+  triggers_replace = [each.value.memory]
+
+  provisioner "local-exec" {
+    command = "bash '${path.module}/../scripts/multipass-node.sh' resize '${each.value.name}' '${each.value.memory}'"
+  }
+
+  depends_on = [terraform_data.kubernetes_node]
 }
 
 # Records the existing load balancer topology without managing VM lifecycle.
@@ -135,7 +166,9 @@ resource "terraform_data" "load_balancer_vm" {
     each.value.name,
     each.value.zone,
     each.value.cpus,
-    each.value.memory,
+    # launch_memory, not memory: changing the running size must resize the VM
+    # in place (node_memory below), never destroy and recreate it.
+    each.value.launch_memory,
     each.value.disk,
     each.value.frontend_ip,
     var.ubuntu_image

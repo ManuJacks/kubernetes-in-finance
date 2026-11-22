@@ -35,4 +35,7 @@ cni_plugins_download_url: "https://github.com/containernetworking/plugins/releas
 cni_plugins_checksum: "sha256:ab3bda535f9d90766cccc90d3dddb5482003dd744d7f22bcf98186bf8eea8be6"
 
 # Temporary download directory
-containerd_download_dir: "/tmp/containerd-install"
+# On disk, not /tmp: /tmp is tmpfs (RAM) on these nodes, and archives left
+# there held ~190 MiB of a 950 MiB worker (INC-2026-11-22-worker2-memory).
+# Kept as a cache: get_url verifies the checksum and skips the download.
+containerd_download_dir: "/var/cache/kubernetes-in-finance/containerd"
