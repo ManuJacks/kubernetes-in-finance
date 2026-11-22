@@ -1,0 +1,25 @@
+---
+- name: Add the prometheus-community Helm repository
+  kubernetes.core.helm_repository:
+    name: "{{ kube_state_metrics_helm_repo_name }}"
+    repo_url: "{{ kube_state_metrics_helm_repo_url }}"
+    state: present
+
+- name: Install or update kube-state-metrics
+  kubernetes.core.helm:
+    name: kube-state-metrics
+    chart_ref: "{{ kube_state_metrics_helm_repo_name }}/kube-state-metrics"
+    chart_version: "{{ kube_state_metrics_chart_version }}"
+    release_namespace: "{{ kube_state_metrics_namespace }}"
+    create_namespace: false
+    kubeconfig: "{{ kube_state_metrics_kubeconfig }}"
+    update_repo_cache: true
+    state: present
+    wait: true
+    wait_timeout: "5m"
+    values:
+      # Prometheus on the engineering host scrapes this Service through the
+      # API server proxy; the path depends on this name.
+      fullnameOverride: kube-state-metrics
+      resources: "{{ kube_state_metrics_resources }}"
+      collectors: "{{ kube_state_metrics_collectors }}"

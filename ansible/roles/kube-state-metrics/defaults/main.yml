@@ -1,0 +1,27 @@
+---
+kube_state_metrics_helm_repo_name: "prometheus-community"
+kube_state_metrics_helm_repo_url: "https://prometheus-community.github.io/helm-charts"
+kube_state_metrics_chart_version: "9.1.0"
+kube_state_metrics_namespace: "kube-system"
+kube_state_metrics_kubeconfig: "{{ lookup('env', 'HOME') }}/.kube/kubernetes-in-finance.conf"
+
+# Workers have ~950 MiB each; keep the footprint small and bounded.
+kube_state_metrics_resources:
+  requests:
+    cpu: 10m
+    memory: 32Mi
+  limits:
+    memory: 96Mi
+
+# Only the object types the workload-health rules and dashboard use.
+# Fewer collectors means fewer series and less memory.
+kube_state_metrics_collectors:
+  - daemonsets
+  - deployments
+  - jobs
+  - cronjobs
+  - nodes
+  - persistentvolumeclaims
+  - pods
+  - replicasets
+  - statefulsets

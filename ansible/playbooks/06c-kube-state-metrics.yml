@@ -1,0 +1,11 @@
+---
+- name: Deploy kube-state-metrics
+  hosts: localhost
+  connection: local
+  become: false
+
+  vars:
+    ansible_become: false
+
+  roles:
+    - kube-state-metrics

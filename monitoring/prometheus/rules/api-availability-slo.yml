@@ -3,6 +3,14 @@
 # Error budget: 0.1% (about 43 minutes per 30 days).
 # Burn-rate alerting follows the multi-window, multi-burn-rate method
 # (Google SRE Workbook, "Alerting on SLOs").
+#
+# Burn-rate pages also require each long window to hold at least half its
+# expected samples (10 s probes). After a gap in Prometheus itself (the host
+# suspended on 2026-11-22 04:21 UTC), one failed probe in a nearly empty window
+# looked like a 5% error rate and paged. A real outage still produces samples
+# (probe_success 0), so this only suppresses alerts computed from too little
+# data. Cost: after such a gap, fast-burn paging resumes once 30 minutes of
+# probes exist (docs/decisions/ADR-006-alerting-policy.md).
 groups:
   - name: api-availability-sli
     interval: 30s
@@ -29,6 +37,8 @@ groups:
           sli:api_availability:error_ratio_rate1h > (14.4 * 0.001)
           and
           sli:api_availability:error_ratio_rate5m > (14.4 * 0.001)
+          and on (job, instance)
+          count_over_time(probe_success{job="api-vip"}[1h]) >= 180
         for: 2m
         labels:
           severity: page
@@ -41,6 +51,8 @@ groups:
           sli:api_availability:error_ratio_rate6h > (6 * 0.001)
           and
           sli:api_availability:error_ratio_rate30m > (6 * 0.001)
+          and on (job, instance)
+          count_over_time(probe_success{job="api-vip"}[6h]) >= 1080
         for: 15m
         labels:
           severity: page

@@ -4,12 +4,16 @@
 groups:
   - name: resource-limits
     rules:
-      # Memory Alerts
+      # Memory alerts. Host: node-exporter MemAvailable. Cluster nodes: cAdvisor
+      # root-cgroup working set, aggregated by instance because the two
+      # series carry different labels (the unaggregated form matched nothing:
+      # PRB-2026-11-22-node-memory). Working set understates pressure from
+      # tmpfs and page cache; node-level MemAvailable is action 5 there.
       - alert: NodeMemoryPressureWarning
         expr: |
           (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) > 0.85
           or
-          (1 - (container_fs_limit_bytes{device="/dev/shm"} or machine_memory_bytes - container_memory_working_set_bytes{id="/"}) / machine_memory_bytes) > 0.85
+          (sum by (instance) (container_memory_working_set_bytes{id="/"}) / sum by (instance) (machine_memory_bytes)) > 0.85
         for: 5m
         labels:
           severity: ticket
@@ -21,7 +25,7 @@ groups:
         expr: |
           (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) > 0.95
           or
-          (1 - (container_fs_limit_bytes{device="/dev/shm"} or machine_memory_bytes - container_memory_working_set_bytes{id="/"}) / machine_memory_bytes) > 0.95
+          (sum by (instance) (container_memory_working_set_bytes{id="/"}) / sum by (instance) (machine_memory_bytes)) > 0.95
         for: 2m
         labels:
           severity: page

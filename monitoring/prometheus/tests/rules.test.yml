@@ -5,6 +5,7 @@ rule_files:
   - ../rules/etcd-backup-rpo.yml
   - ../rules/drills.yml
   - ../rules/alerting-pipeline.yml
+  - ../rules/kubernetes-workloads.yml
 
 evaluation_interval: 30s
 
@@ -288,4 +289,420 @@ tests:
               mountpoint: /
             exp_annotations:
               summary: "Root filesystem on node1 is above 90% full; immediate disk exhaustion risk."
+              runbook: docs/monitoring/README.md
+
+  # Workloads: a crash-looping container tickets after it has looped for 10
+  # minutes; a container that waited briefly in CrashLoopBackOff does not.
+  - interval: 1m
+    input_series:
+      - series: 'kube_pod_container_status_waiting_reason{job="kube-state-metrics", namespace="apps", pod="api-1", container="api", reason="CrashLoopBackOff"}'
+        values: '1x30'
+      - series: 'kube_pod_container_status_waiting_reason{job="kube-state-metrics", namespace="apps", pod="api-2", container="api", reason="CrashLoopBackOff"}'
+        values: '1x2 0x28'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: KubePodCrashLooping
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: KubePodCrashLooping
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              job: kube-state-metrics
+              namespace: apps
+              pod: api-1
+              container: api
+              reason: CrashLoopBackOff
+            exp_annotations:
+              summary: "apps/api-1 container api is in CrashLoopBackOff."
+              runbook: docs/runbooks/kubernetes-workloads.md
+
+  # OOMKilled alerts only while there is a recent restart, not forever after.
+  - interval: 1m
+    input_series:
+      - series: 'kube_pod_container_status_restarts_total{job="kube-state-metrics", namespace="apps", pod="worker-1", container="worker"}'
+        values: '0x10 1x50'
+      - series: 'kube_pod_container_status_last_terminated_reason{namespace="apps", pod="worker-1", container="worker", reason="OOMKilled"}'
+        values: '0x10 1x50'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: KubeContainerOOMKilled
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              job: kube-state-metrics
+              namespace: apps
+              pod: worker-1
+              container: worker
+            exp_annotations:
+              summary: "apps/worker-1 container worker was OOMKilled in the last 10 minutes."
+              runbook: docs/runbooks/kubernetes-workloads.md
+      - eval_time: 40m
+        alertname: KubeContainerOOMKilled
+        exp_alerts: []
+
+  # Image pull and config errors, a stuck Pending pod and a NotReady node.
+  - interval: 1m
+    input_series:
+      - series: 'kube_pod_container_status_waiting_reason{job="kube-state-metrics", namespace="apps", pod="web-1", container="web", reason="ImagePullBackOff"}'
+        values: '1x20'
+      - series: 'kube_pod_container_status_waiting_reason{namespace="apps", pod="web-2", container="web", reason="CreateContainerConfigError"}'
+        values: '1x20'
+      - series: 'kube_pod_status_phase{job="kube-state-metrics", namespace="apps", pod="big-1", phase="Pending"}'
+        values: '1x20'
+      - series: 'kube_node_status_condition{job="kube-state-metrics", node="tf-ha-worker1", condition="Ready", status="true"}'
+        values: '1x5 0x15'
+      - series: 'kube_node_status_condition{job="kube-state-metrics", node="tf-ha-worker2", condition="Ready", status="true"}'
+        values: '1x20'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: KubeContainerImagePullFailing
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              job: kube-state-metrics
+              namespace: apps
+              pod: web-1
+              container: web
+              reason: ImagePullBackOff
+            exp_annotations:
+              summary: "apps/web-1 cannot pull the image for web (ImagePullBackOff)."
+              runbook: docs/runbooks/kubernetes-workloads.md
+      - eval_time: 15m
+        alertname: KubeContainerConfigError
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              namespace: apps
+              pod: web-2
+              container: web
+              reason: CreateContainerConfigError
+            exp_annotations:
+              summary: "apps/web-2 container web cannot be created (CreateContainerConfigError)."
+              runbook: docs/runbooks/kubernetes-workloads.md
+      - eval_time: 15m
+        alertname: KubePodStuckPending
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              job: kube-state-metrics
+              namespace: apps
+              pod: big-1
+              phase: Pending
+            exp_annotations:
+              summary: "apps/big-1 has been Pending for 10 minutes (unschedulable, or waiting on a volume)."
+              runbook: docs/runbooks/kubernetes-workloads.md
+      - eval_time: 15m
+        alertname: KubeNodeNotReady
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              job: kube-state-metrics
+              node: tf-ha-worker1
+              condition: Ready
+              status: "true"
+            exp_annotations:
+              summary: "Node tf-ha-worker1 has been NotReady for 5 minutes."
+              runbook: docs/runbooks/kubernetes-workloads.md
+
+  # Controllers short of replicas; a fully available Deployment is quiet.
+  - interval: 1m
+    input_series:
+      - series: 'kube_deployment_spec_replicas{job="kube-state-metrics", namespace="apps", deployment="api"}'
+        values: '2x20'
+      - series: 'kube_deployment_status_replicas_available{job="kube-state-metrics", namespace="apps", deployment="api"}'
+        values: '1x20'
+      - series: 'kube_deployment_spec_replicas{job="kube-state-metrics", namespace="apps", deployment="web"}'
+        values: '2x20'
+      - series: 'kube_deployment_status_replicas_available{job="kube-state-metrics", namespace="apps", deployment="web"}'
+        values: '2x20'
+      - series: 'kube_daemonset_status_desired_number_scheduled{job="kube-state-metrics", namespace="kube-system", daemonset="cilium"}'
+        values: '5x20'
+      - series: 'kube_daemonset_status_number_available{job="kube-state-metrics", namespace="kube-system", daemonset="cilium"}'
+        values: '4x20'
+      - series: 'kube_statefulset_replicas{job="kube-state-metrics", namespace="apps", statefulset="db"}'
+        values: '3x20'
+      - series: 'kube_statefulset_status_replicas_ready{job="kube-state-metrics", namespace="apps", statefulset="db"}'
+        values: '2x20'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: KubeDeploymentReplicasUnavailable
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              job: kube-state-metrics
+              namespace: apps
+              deployment: api
+            exp_annotations:
+              summary: "Deployment apps/api has fewer available replicas than desired for 10 minutes."
+              runbook: docs/runbooks/kubernetes-workloads.md
+      - eval_time: 15m
+        alertname: KubeDaemonSetPodsUnavailable
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              job: kube-state-metrics
+              namespace: kube-system
+              daemonset: cilium
+            exp_annotations:
+              summary: "DaemonSet kube-system/cilium is not available on every node it should run on."
+              runbook: docs/runbooks/kubernetes-workloads.md
+      - eval_time: 15m
+        alertname: KubeStatefulSetReplicasUnavailable
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              job: kube-state-metrics
+              namespace: apps
+              statefulset: db
+            exp_annotations:
+              summary: "StatefulSet apps/db has fewer ready replicas than desired for 10 minutes."
+              runbook: docs/runbooks/kubernetes-workloads.md
+
+  # Failed Job and Pending PVC.
+  - interval: 1m
+    input_series:
+      - series: 'kube_job_status_failed{job="kube-state-metrics", namespace="batch", job_name="report"}'
+        values: '1x20'
+      - series: 'kube_persistentvolumeclaim_status_phase{job="kube-state-metrics", namespace="apps", persistentvolumeclaim="data", phase="Pending"}'
+        values: '1x20'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: KubeJobFailed
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              job: kube-state-metrics
+              namespace: batch
+              job_name: report
+            exp_annotations:
+              summary: "Job batch/report has failed pods."
+              runbook: docs/runbooks/kubernetes-workloads.md
+      - eval_time: 15m
+        alertname: KubePersistentVolumeClaimPending
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              job: kube-state-metrics
+              namespace: apps
+              persistentvolumeclaim: data
+              phase: Pending
+            exp_annotations:
+              summary: "PVC apps/data has been Pending for 10 minutes."
+              runbook: docs/runbooks/kubernetes-workloads.md
+
+  # kube-state-metrics missing entirely is itself an alert; scraped and up is quiet.
+  - interval: 1m
+    input_series:
+      - series: 'up{job="prometheus"}'
+        values: '1x20'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: KubeStateMetricsDown
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              job: kube-state-metrics
+            exp_annotations:
+              summary: kube-state-metrics is not being scraped; workload health alerts are blind.
+              runbook: docs/runbooks/kubernetes-workloads.md
+  - interval: 1m
+    input_series:
+      - series: 'up{job="kube-state-metrics", instance="kube-state-metrics"}'
+        values: '1x20'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: KubeStateMetricsDown
+        exp_alerts: []
+
+  # Workload recovery drill: a slow recovery, an unverified page and a failed
+  # drill each raise a ticket; the weekly 8-day overdue rule ignores this
+  # monthly drill.
+  - interval: 1m
+    input_series:
+      - series: 'platform_drill_last_success{drill="workload_node_loss", host="w2"}'
+        values: '1x10'
+      - series: 'platform_drill_duration_seconds{drill="workload_node_loss", host="w2"}'
+        values: '420x10'
+      - series: 'platform_drill_alert_fired{drill="workload_node_loss", host="w2", alertname="KubeNodeNotReady"}'
+        values: '0x10'
+      # Last run 9 days ago: past the weekly 8-day threshold, within 35 days.
+      - series: 'platform_drill_last_run_timestamp_seconds{drill="workload_node_loss", host="w2"}'
+        values: '-777600x10'
+      - series: 'platform_drill_last_success{drill="workload_node_loss", host="w1"}'
+        values: '0x10'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: WorkloadRecoveryObjectiveMissed
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              drill: workload_node_loss
+              host: w2
+            exp_annotations:
+              summary: "Workload recovery took 7m 0s in the last drill; the objective is 6 minutes."
+              runbook: docs/runbooks/workload-recovery-drill.md
+      - eval_time: 5m
+        alertname: NodeLossAlertNotVerified
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              drill: workload_node_loss
+              host: w2
+              alertname: KubeNodeNotReady
+            exp_annotations:
+              summary: "KubeNodeNotReady did not fire during the last node-loss drill; node loss may go undetected."
+              runbook: docs/runbooks/workload-recovery-drill.md
+      - eval_time: 5m
+        alertname: WorkloadRecoveryDrillFailed
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              drill: workload_node_loss
+              host: w1
+            exp_annotations:
+              summary: "The last workload recovery drill (w1) did not restore full capacity."
+              runbook: docs/runbooks/workload-recovery-drill.md
+      - eval_time: 5m
+        alertname: PlatformDrillFailed
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: PlatformDrillOverdue
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: WorkloadRecoveryDrillOverdue
+        exp_alerts: []
+
+  # Regression (alert review 2026-11-22): the host suspended, then one probe
+  # failed as the VMs resumed. With almost no samples in the windows this paged
+  # as a fast burn. Insufficient data must not page.
+  - interval: 10s
+    input_series:
+      - series: 'probe_success{job="api-vip", instance="vip"}'
+        values: '1x360 _x720 0 1x60'
+    alert_rule_test:
+      - eval_time: 185m
+        alertname: ApiAvailabilityFastBurn
+        exp_alerts: []
+
+  # A steady 1% error rate (the 6 h window needs 3 h of data): slow burn (6x) pages and the 3-day erosion ticket
+  # fires, but it is below the 14.4x fast-burn threshold.
+  - interval: 10s
+    input_series:
+      - series: 'probe_success{job="api-vip", instance="vip"}'
+        values: '0.99x1300'
+    alert_rule_test:
+      - eval_time: 3h30m
+        alertname: ApiAvailabilitySlowBurn
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              job: api-vip
+              instance: vip
+            exp_annotations:
+              summary: API availability error budget burning at more than 6x (5% of the 30-day budget in 6 hours).
+              runbook: docs/gameday/2026-11-21-api-availability.md
+      - eval_time: 3h30m
+        alertname: ApiAvailabilityBudgetErosion
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              job: api-vip
+              instance: vip
+            exp_annotations:
+              summary: API availability is consuming error budget faster than the SLO allows over 3 days.
+              runbook: docs/gameday/2026-11-21-api-availability.md
+      - eval_time: 3h30m
+        alertname: ApiAvailabilityFastBurn
+        exp_alerts: []
+
+  # Node resources: CPU at 90% (warning) and 97% (warning and critical),
+  # memory at 97% (critical), root disk 85% full (filling).
+  - interval: 1m
+    input_series:
+      - series: 'node_cpu_seconds_total{instance="n1", cpu="0", mode="idle"}'
+        values: '0+6x30'
+      - series: 'node_cpu_seconds_total{instance="n2", cpu="0", mode="idle"}'
+        values: '0+1.8x30'
+      - series: 'node_memory_MemAvailable_bytes{instance="n3"}'
+        values: '30000000x30'
+      - series: 'node_memory_MemTotal_bytes{instance="n3"}'
+        values: '1000000000x30'
+      - series: 'node_filesystem_avail_bytes{mountpoint="/", instance="n4"}'
+        values: '150000000x30'
+      - series: 'node_filesystem_size_bytes{mountpoint="/", instance="n4"}'
+        values: '1000000000x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: NodeCpuHighUtilizationWarning
+        exp_alerts:
+          - exp_labels: {severity: ticket, instance: n1}
+            exp_annotations:
+              summary: "Node n1 CPU utilization is sustained above 85% for 10 minutes."
+              runbook: docs/monitoring/README.md
+          - exp_labels: {severity: ticket, instance: n2}
+            exp_annotations:
+              summary: "Node n2 CPU utilization is sustained above 85% for 10 minutes."
+              runbook: docs/monitoring/README.md
+      - eval_time: 25m
+        alertname: NodeCpuSaturatedCritical
+        exp_alerts:
+          - exp_labels: {severity: page, instance: n2}
+            exp_annotations:
+              summary: "Node n2 CPU utilization is above 95%; control-plane or workload starvation risk."
+              runbook: docs/monitoring/README.md
+      - eval_time: 25m
+        alertname: NodeMemoryPressureCritical
+        exp_alerts:
+          - exp_labels: {severity: page, instance: n3}
+            exp_annotations:
+              summary: "Node n3 memory usage is above 95%; risk of OOM eviction."
+              runbook: docs/monitoring/README.md
+      - eval_time: 25m
+        alertname: NodeDiskSpaceFillingFast
+        exp_alerts:
+          - exp_labels: {severity: ticket, instance: n4, mountpoint: /}
+            exp_annotations:
+              summary: "Root filesystem on n4 has less than 20% free space remaining."
+              runbook: docs/monitoring/README.md
+
+  # The monthly workload recovery drill is overdue after 35 days. Last runs are
+  # dated in the past (36 d and 34 d ago) to avoid simulating a month.
+  - interval: 1m
+    input_series:
+      - series: 'platform_drill_last_run_timestamp_seconds{drill="workload_node_loss", host="w2"}'
+        values: '-3110400x10'
+      - series: 'platform_drill_last_run_timestamp_seconds{drill="workload_node_loss", host="w1"}'
+        values: '-2937600x10'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: WorkloadRecoveryDrillOverdue
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              drill: workload_node_loss
+              host: w2
+            exp_annotations:
+              summary: No workload recovery drill in 35 days (monthly); KPI 5 evidence is stale.
+              runbook: docs/runbooks/workload-recovery-drill.md
+
+  # Cluster nodes (cAdvisor): the memory alert must evaluate with the real
+  # label sets, which differ between the two series (PRB-2026-11-22-node-memory).
+  - interval: 1m
+    input_series:
+      - series: 'machine_memory_bytes{instance="w2", node="w2", job="kubernetes-cadvisor", endpoint="cadvisor", boot_id="b", machine_id="m", system_uuid="u"}'
+        values: '1000000000x20'
+      - series: 'container_memory_working_set_bytes{instance="w2", node="w2", job="kubernetes-cadvisor", endpoint="cadvisor", id="/"}'
+        values: '900000000x20'
+      - series: 'machine_memory_bytes{instance="w1", node="w1", job="kubernetes-cadvisor", endpoint="cadvisor", boot_id="b", machine_id="m", system_uuid="u"}'
+        values: '1000000000x20'
+      - series: 'container_memory_working_set_bytes{instance="w1", node="w1", job="kubernetes-cadvisor", endpoint="cadvisor", id="/"}'
+        values: '500000000x20'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: NodeMemoryPressureWarning
+        exp_alerts:
+          - exp_labels: {severity: ticket, instance: w2}
+            exp_annotations:
+              summary: "Node w2 memory usage is above 85%."
               runbook: docs/monitoring/README.md

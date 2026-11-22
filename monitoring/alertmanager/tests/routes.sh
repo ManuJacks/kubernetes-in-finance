@@ -21,6 +21,9 @@ expect ntfy-page alertname=ApiAvailabilityFastBurn severity=page
 expect ntfy-page alertname=EtcdBackupRPOAtRisk severity=page
 expect ntfy-ticket alertname=EtcdBackupFailed severity=ticket
 expect ntfy-ticket alertname=PlatformDrillOverdue severity=ticket
+expect ntfy-page alertname=KubeNodeNotReady severity=page
+expect ntfy-page alertname=KubeContainerOOMKilled severity=page
+expect ntfy-ticket alertname=KubePodCrashLooping severity=ticket
 # Anything unlabelled must still reach a human, not be dropped.
 expect ntfy-ticket alertname=Unclassified
 
