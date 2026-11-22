@@ -109,11 +109,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
 
+      # Cluster CA and client credentials are installed only on the monitoring
+      # host by Ansible; promtool requires the files to exist, so use empty
+      # placeholders in a copy of the configuration.
       - name: promtool check config
-        run: >-
-          docker run --rm -v "$PWD/monitoring/prometheus:/etc/prometheus:ro"
-          --entrypoint promtool "$PROMETHEUS_IMAGE"
-          check config /etc/prometheus/prometheus.yml
+        run: |
+          cp -r monitoring/prometheus "$RUNNER_TEMP/prometheus"
+          touch "$RUNNER_TEMP"/prometheus/kubernetes-{ca,client}.crt "$RUNNER_TEMP/prometheus/kubernetes-client.key"
+          docker run --rm -v "$RUNNER_TEMP/prometheus:/etc/prometheus:ro" \
+            --entrypoint promtool "$PROMETHEUS_IMAGE" \
+            check config /etc/prometheus/prometheus.yml
 
       - name: promtool test rules
         run: >-

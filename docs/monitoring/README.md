@@ -32,7 +32,7 @@ Grafana dashboard shows the same table with live values.
 | 2 | Backup success | 100% of attempts | Per-node outcome of every hourly backup | Live; ticket on any failure, or no attempt for 2 h |
 | 3 | Restore drill freshness | Successful drill within 7 days | Weekly isolated restore drill (user timer, Sundays 03:00) | Live; ticket at 8 days |
 | 4 | Control-plane failover RTO | LB 30 s; control-plane node 60 s | Game-day drills | Demonstrated 2026-11-21 (3.6 s, 5.3 s, no full outage) |
-| 5 | Workload recovery | ≤ 6 min | — | **Defined, unmeasured** |
+| 5 | Workload recovery | ≤ 6 min | Monthly node-loss drill: worker powered off, time until a 2-replica Deployment is back to full capacity ([runbook](../runbooks/workload-recovery-drill.md)) | **Drill ready, first run pending**; ticket if a run misses 6 min or the node-loss page does not fire |
 | 6 | Control-plane node replacement | ≤ 30 min | — | **Defined, unmeasured** |
 | 7 | Full cluster restore RTO | ≤ 2 h | — | **Defined, unmeasured** (isolated restore only) |
 | 8 | API availability SLO | 99.9% over 30 days | `/readyz` through the VIP every 10 s | Live; burn-rate alerts |
@@ -53,13 +53,24 @@ Alertmanager `group_wait` (30 s) and ntfy delivery.
 | **Backup success** | Per-node status file written by every backup attempt | Ticket if a node's last attempt failed, or it has not attempted for 2 h |
 | **RTO evidence** | `scripts/drills/etcd-restore-drill.sh`: timed isolated restore of the newest snapshot, weekly | Ticket if the last drill failed or none ran in 8 days |
 | **Alerting pipeline** | Alertmanager reachability and failed-delivery counter | Ticket (visible in Grafana even when delivery is broken) |
+| **Workload health** | kube-state-metrics in the cluster, scraped through the API server proxy: node Ready condition, container waiting/termination reasons, pod phase, controller replica counts, Jobs, PVCs | Page on a NotReady node or an OOM kill; ticket on crash loops, image pull or config errors, Pending pods or PVCs, controllers short of replicas, failed Jobs, or kube-state-metrics itself missing ([runbook](../runbooks/kubernetes-workloads.md)) |
 
 Each API server is also probed directly (bypassing HAProxy). That is
 diagnostic, not part of the SLO.
 
+Which alerts page and which raise a ticket is decided in
+[ADR-006](../decisions/ADR-006-alerting-policy.md), which also lists every
+alert. Alerts are reviewed every two weeks for actionability
+([alert review](alert-review.md)); the first review found and fixed a false
+page caused by the host suspending
+([PRB-2026-11-22](../problems/PRB-2026-11-22-false-page-after-host-suspend.md),
+[CHG-2026-11-22](../changes/CHG-2026-11-22-burn-rate-data-guard.md)).
+
 Rules are unit-tested with `promtool test rules`
 (`monitoring/prometheus/tests/rules.test.yml`), including cases that must
-*not* alert, such as a 4-second failover blip.
+*not* alert, such as a 4-second failover blip or a monitoring gap.
+`tests/test_monitoring.py` fails if an alert has no firing test, no runbook
+file, or a severity different from ADR-006.
 
 ## Recovery objectives
 
@@ -140,17 +151,17 @@ data would not persist.
 The configuration in `monitoring/` (scrape config, rules, rule tests,
 dashboards) is deployment-independent.
 
-1. **Add worker memory, safely.** Do not just change `memory` in
-   `terraform/main.tf`: it is part of `triggers_replace`, so Terraform would
-   **destroy and recreate** each worker rather than resize it. Implement an
-   in-place resize first (`multipass stop`, `multipass set
-   local.<name>.memory=<size>`, `multipass start`, one worker at a time, with
-   the node drained), and change Terraform so memory changes run that resize
-   instead of replacing the VM.
+1. **Add worker memory, safely.** Implemented: `memory` in
+   `terraform/main.tf` is now the running size, resized in place by
+   `terraform_data.node_memory` (`scripts/multipass-node.sh resize`: drain,
+   stop, resize, start, wait Ready, uncordon; one worker at a time; refuses
+   control-plane nodes and insufficient host memory). Only `launch_memory`
+   is part of the VM's identity. Workers: 1 GiB at launch, 1.5 GiB running.
 2. **Add persistent storage** (for example a local-path provisioner) so
    Prometheus data survives pod restarts.
 3. **Deploy Prometheus and Grafana in-cluster** from the same rules and
    dashboards (for example as ConfigMaps for a Helm-based stack), and add
-   in-cluster exporters (kube-state-metrics, node-exporter DaemonSet).
+   a node-exporter DaemonSet. kube-state-metrics already runs in-cluster;
+   only its scrape path changes.
 4. **Keep the external probe.** Retain the blackbox probe of the VIP on the
    host (or another external location) as the SLO's source of truth.

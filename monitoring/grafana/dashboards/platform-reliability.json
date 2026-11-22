@@ -793,7 +793,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "| # | KPI | Target | How it is measured | Status |\n|---|---|---|---|---|\n| 1 | etcd RPO | **≤ 1 h** | Age of newest snapshot, continuous | Live (pages at 90 min) |\n| 2 | Backup success | **100 %** of attempts | Per-node outcome of every hourly run | Live (ticket on any failure) |\n| 3 | Restore drill freshness | **≤ 7 d** since last success | Weekly isolated restore drill (timer) | Live (ticket at 8 d) |\n| 4 | Control-plane failover RTO | **LB 30 s, control-plane node 60 s** | Game-day drills | Demonstrated 2026-11-21: 3.6 s / 5.3 s / no full outage |\n| 5 | Workload recovery | ≤ 6 min | Not yet drilled | **Defined, unmeasured** |\n| 6 | Control-plane node replacement | ≤ 30 min | Not yet drilled | **Defined, unmeasured** |\n| 7 | Full cluster restore RTO | ≤ 2 h | Not yet drilled (isolated restore only) | **Defined, unmeasured** |\n| 8 | API availability SLO | **99.9 %** over 30 d | `/readyz` through the VIP every 10 s | Live (burn-rate pages) |\n| 9 | Mean time to detect | **≤ 5 min** for a full API outage | `promtool` rule test: fast burn fires by 5 min | Tested in CI; delivery verified to ntfy |\n\nLab objectives for this platform, not production commitments. Unmeasured KPIs are listed so they are not mistaken for achieved ones."
+        "content": "| # | KPI | Target | How it is measured | Status |\n|---|---|---|---|---|\n| 1 | etcd RPO | **≤ 1 h** | Age of newest snapshot, continuous | Live (pages at 90 min) |\n| 2 | Backup success | **100 %** of attempts | Per-node outcome of every hourly run | Live (ticket on any failure) |\n| 3 | Restore drill freshness | **≤ 7 d** since last success | Weekly isolated restore drill (timer) | Live (ticket at 8 d) |\n| 4 | Control-plane failover RTO | **LB 30 s, control-plane node 60 s** | Game-day drills | Demonstrated 2026-11-21: 3.6 s / 5.3 s / no full outage |\n| 5 | Workload recovery | **≤ 6 min** | Monthly node-loss drill (manual; see panels below) | Drill ready; first run pending |\n| 6 | Control-plane node replacement | ≤ 30 min | Not yet drilled | **Defined, unmeasured** |\n| 7 | Full cluster restore RTO | ≤ 2 h | Not yet drilled (isolated restore only) | **Defined, unmeasured** |\n| 8 | API availability SLO | **99.9 %** over 30 d | `/readyz` through the VIP every 10 s | Live (burn-rate pages) |\n| 9 | Mean time to detect | **≤ 5 min** for a full API outage | `promtool` rule test: fast burn fires by 5 min | Tested in CI; delivery verified to ntfy |\n\nLab objectives for this platform, not production commitments. Unmeasured KPIs are listed so they are not mistaken for achieved ones."
       }
     },
     {
@@ -1324,6 +1324,1019 @@
           "mode": "multi"
         }
       }
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 62
+      },
+      "id": 29,
+      "panels": [],
+      "title": "Cluster Resource Utilization & Saturation (Capacity)",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth"
+          },
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 85
+              },
+              {
+                "color": "red",
+                "value": 95
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 63
+      },
+      "id": 30,
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum by (node) (rate(container_cpu_usage_seconds_total{id=\"/\"}[5m])) / sum by (node) (machine_cpu_cores) * 100",
+          "legendFormat": "{{node}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Node CPU Utilization (%)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth"
+          },
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 85
+              },
+              {
+                "color": "red",
+                "value": 95
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 63
+      },
+      "id": 31,
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum by (node) (container_memory_working_set_bytes{id=\"/\"}) / sum by (node) (machine_memory_bytes) * 100",
+          "legendFormat": "{{node}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Node Memory Utilization (%)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth"
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 71
+      },
+      "id": 32,
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "topk(10, sum by (namespace, pod) (rate(container_cpu_usage_seconds_total{container!=\"\", pod!=\"\"}[5m])))",
+          "legendFormat": "{{namespace}}/{{pod}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Top Pods by CPU Usage (Cores)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth"
+          },
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 71
+      },
+      "id": 33,
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "topk(10, sum by (namespace, pod) (container_memory_working_set_bytes{container!=\"\", pod!=\"\"}))",
+          "legendFormat": "{{namespace}}/{{pod}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Top Pods by Memory Working Set",
+      "type": "timeseries"
+    },
+    {
+      "id": 34,
+      "type": "row",
+      "title": "Workload & pod health (kube-state-metrics)",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 79
+      },
+      "panels": []
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Nodes whose Ready condition is not true. Pages after 5 minutes.",
+      "id": 35,
+      "type": "stat",
+      "title": "Nodes NotReady",
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 0,
+        "y": 80
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "0",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "count(kube_node_status_condition{condition=\"Ready\",status=\"true\"} == 0) or vector(0)",
+          "legendFormat": "",
+          "refId": "A",
+          "range": true
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Containers currently waiting in CrashLoopBackOff.",
+      "id": 36,
+      "type": "stat",
+      "title": "Containers crash-looping",
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 4,
+        "y": 80
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "0",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "count(kube_pod_container_status_waiting_reason{reason=\"CrashLoopBackOff\"} == 1) or vector(0)",
+          "legendFormat": "",
+          "refId": "A",
+          "range": true
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Containers that cannot start because the image cannot be pulled or the container cannot be created (often a missing Secret or ConfigMap).",
+      "id": 37,
+      "type": "stat",
+      "title": "Image pull / config errors",
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 8,
+        "y": 80
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "0",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "count(kube_pod_container_status_waiting_reason{reason=~\"ErrImagePull|ImagePullBackOff|InvalidImageName|CreateContainerConfigError|CreateContainerError\"} == 1) or vector(0)",
+          "legendFormat": "",
+          "refId": "A",
+          "range": true
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Pods not yet scheduled or started. Alerts after 10 minutes.",
+      "id": 38,
+      "type": "stat",
+      "title": "Pods Pending",
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 12,
+        "y": 80
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "0",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "count(kube_pod_status_phase{phase=\"Pending\"} == 1) or vector(0)",
+          "legendFormat": "",
+          "refId": "A",
+          "range": true
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Deployments, StatefulSets and DaemonSets with fewer available pods than desired.",
+      "id": 39,
+      "type": "stat",
+      "title": "Workloads short of replicas",
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 16,
+        "y": 80
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "0",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "(count(kube_deployment_spec_replicas > kube_deployment_status_replicas_available) or vector(0)) + (count(kube_statefulset_replicas > kube_statefulset_status_replicas_ready) or vector(0)) + (count(kube_daemonset_status_desired_number_scheduled > kube_daemonset_status_number_available) or vector(0))",
+          "legendFormat": "",
+          "refId": "A",
+          "range": true
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Containers restarted in the last hour whose last termination was OOMKilled.",
+      "id": 40,
+      "type": "stat",
+      "title": "OOMKilled (1 h)",
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 20,
+        "y": 80
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "0",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "count((increase(kube_pod_container_status_restarts_total[1h]) >= 1) and on (namespace, pod, container) (kube_pod_container_status_last_terminated_reason{reason=\"OOMKilled\"} == 1)) or vector(0)",
+          "legendFormat": "",
+          "refId": "A",
+          "range": true
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "id": 41,
+      "type": "timeseries",
+      "title": "Container restarts (1 h, by pod)",
+      "description": "Restarts per pod over the last hour. A steady climb is a crash loop; a single step is often an OOM kill.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 85
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "stepAfter"
+          },
+          "unit": "short",
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum by (namespace, pod) (increase(kube_pod_container_status_restarts_total[1h])) > 0",
+          "legendFormat": "{{namespace}}/{{pod}}",
+          "refId": "A",
+          "range": true
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "id": 42,
+      "type": "table",
+      "title": "Unhealthy pods and containers (now)",
+      "description": "Every container waiting for a reason other than a normal start, and every pod not Running or Succeeded.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 85
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      },
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Value #A": true,
+              "Value #B": true,
+              "__name__": true,
+              "job": true,
+              "instance": true,
+              "endpoint": true,
+              "uid": true
+            }
+          }
+        }
+      ],
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "kube_pod_container_status_waiting_reason{reason!=\"ContainerCreating\"} == 1",
+          "legendFormat": "",
+          "refId": "A",
+          "instant": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "kube_pod_status_phase{phase=~\"Pending|Failed|Unknown\"} == 1",
+          "legendFormat": "",
+          "refId": "B",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "id": 43,
+      "type": "row",
+      "title": "Workload recovery drill (KPI 5: full capacity within 6 min of losing a worker)",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 93
+      },
+      "panels": []
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Seconds from powering off a worker until the drill Deployment had full capacity again. KPI ≤ 360 s.",
+      "id": 44,
+      "type": "stat",
+      "title": "Recovery time (last drill)",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 94
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "noValue": "Not yet run",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 360
+              }
+            ]
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "max(platform_drill_duration_seconds{drill=\"workload_node_loss\"})",
+          "instant": true,
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Seconds the dead replica kept receiving Service traffic. Partial failure for clients during this time.",
+      "id": 45,
+      "type": "stat",
+      "title": "Endpoint removed after",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 94
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "noValue": "Not yet run",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 60
+              }
+            ]
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "max(platform_drill_phase_seconds{drill=\"workload_node_loss\",phase=\"endpoint_removed\"})",
+          "instant": true,
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Whether KubeNodeNotReady fired during the last drill, and how long after the power-off (see runbook).",
+      "id": 46,
+      "type": "stat",
+      "title": "Node-loss page verified",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 94
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "noValue": "Not yet run",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Did not fire"
+                },
+                "1": {
+                  "text": "Fired"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "max(platform_drill_alert_fired{drill=\"workload_node_loss\"})",
+          "instant": true,
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Monthly, by hand. Ticket at 35 days.",
+      "id": 47,
+      "type": "stat",
+      "title": "Last drill age",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 94
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "noValue": "Not yet run",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 2592000
+              },
+              {
+                "color": "red",
+                "value": 3024000
+              }
+            ]
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "time() - max(platform_drill_last_run_timestamp_seconds{drill=\"workload_node_loss\"})",
+          "instant": true,
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ]
     }
   ],
   "editable": false

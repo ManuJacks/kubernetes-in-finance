@@ -8,5 +8,8 @@ etcd_tools_download_url: "https://github.com/etcd-io/etcd/releases/download/v{{ 
 
 etcd_tools_checksum: "sha256:b05cb07f5686dab8f9cdab89986b44f0dd24aaf5c627176aff325e21fa56f9f0"
 
-etcd_tools_download_dir: "/tmp/etcd-tools-install"
+# On disk, not /tmp: /tmp is tmpfs (RAM) on these nodes, and archives left
+# there held ~190 MiB of a 950 MiB worker (INC-2026-11-22-worker2-memory).
+# Kept as a cache: get_url verifies the checksum and skips the download.
+etcd_tools_download_dir: "/var/cache/kubernetes-in-finance/etcd-tools"
 etcd_tools_install_dir: "/usr/local/bin"

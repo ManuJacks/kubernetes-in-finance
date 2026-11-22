@@ -108,3 +108,78 @@ def test_drill_timer_runs_the_drill_script():
     service = read(ROLE, "templates", "kif-restore-drill.service.j2")
     assert "scripts/drills/etcd-restore-drill.sh" in service
     assert "OnCalendar={{ monitoring_drill_schedule }}" in read(ROLE, "templates", "kif-restore-drill.timer.j2")
+
+
+def alert_rules():
+    rules_dir = os.path.join(MON, "prometheus", "rules")
+    alerts = {}
+    for fname in sorted(os.listdir(rules_dir)):
+        for group in yaml.safe_load(read(rules_dir, fname))["groups"]:
+            for rule in group["rules"]:
+                if "alert" in rule:
+                    alerts[rule["alert"]] = rule
+    return alerts
+
+
+def test_every_alert_has_a_runbook_that_exists():
+    for name, rule in alert_rules().items():
+        runbook = rule.get("annotations", {}).get("runbook")
+        assert runbook, f"{name} has no runbook annotation"
+        assert os.path.isfile(os.path.join(ROOT, runbook)), f"{name}: runbook {runbook} does not exist"
+
+
+def test_every_alert_has_a_promtool_test_that_fires_it():
+    """ADR-006: an alert nobody has seen fire may never fire."""
+    tests = yaml.safe_load(read(MON, "prometheus", "tests", "rules.test.yml"))
+    fired = {
+        case["alertname"]
+        for group in tests["tests"]
+        for case in group.get("alert_rule_test", [])
+        if case.get("exp_alerts")
+    }
+    missing = sorted(set(alert_rules()) - fired)
+    assert not missing, f"alerts without a firing test: {missing}"
+
+
+def test_adr_alert_inventory_matches_the_rules():
+    """The severity policy (ADR-006) and the rules must not drift apart."""
+    adr = read(ROOT, "docs", "decisions", "ADR-006-alerting-policy.md")
+    inventory = dict(re.findall(r"^\| `(\w+)` \| (page|ticket) \|", adr, re.MULTILINE))
+    actual = {name: rule["labels"]["severity"] for name, rule in alert_rules().items()}
+    assert inventory == actual
+
+
+def test_burn_rate_pages_require_sufficient_data():
+    """Alert review 2026-11-22: a scrape gap made one failed probe page."""
+    alerts = alert_rules()
+    for name in ("ApiAvailabilityFastBurn", "ApiAvailabilitySlowBurn"):
+        assert "count_over_time(probe_success" in alerts[name]["expr"], name
+
+
+def load_alert_review():
+    import importlib.util
+
+    path = os.path.join(ROOT, "scripts", "alerting", "alert_review.py")
+    spec = importlib.util.spec_from_file_location("alert_review", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_alert_review_merges_missed_evaluations_but_splits_real_gaps():
+    review = load_alert_review()
+    # 0..120 continuous, one missed sample at 180, then a real gap until 600.
+    samples = [0, 60, 120, 240, 600, 660]
+    assert review.episodes(samples) == [(0, 300), (600, 720)]
+
+
+def test_alert_review_summarises_per_alert_and_severity():
+    review = load_alert_review()
+    series = {
+        (("alertname", "KubeNodeNotReady"), ("node", "w1"), ("severity", "page")): [0, 60, 120],
+        (("alertname", "KubeNodeNotReady"), ("node", "w2"), ("severity", "page")): [1000],
+    }
+    row = review.summarise(series)[("KubeNodeNotReady", "page")]
+    assert row["episodes"] == 2
+    assert row["seconds"] == 180 + 60
+    assert row["targets"] == {"w1", "w2"}

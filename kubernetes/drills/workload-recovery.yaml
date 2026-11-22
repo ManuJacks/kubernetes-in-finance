@@ -1,0 +1,54 @@
+---
+# Probe workload for scripts/drills/workload-recovery-drill.sh (KPI 5).
+# Two small replicas spread across the workers; the drill powers off the node
+# hosting one of them and times how long until two replicas are Ready again.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kif-drill
+  labels:
+    app.kubernetes.io/part-of: kif-drills
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: drill-web
+  namespace: kif-drill
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: drill-web
+  template:
+    metadata:
+      labels:
+        app: drill-web
+    spec:
+      # Kubernetes defaults (not tuned for the drill): node-monitor grace
+      # period ~40 s, then 300 s not-ready/unreachable toleration before
+      # eviction. The drill measures what an ordinary workload experiences.
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app: drill-web
+      containers:
+        - name: web
+          image: nginx:1.27
+          ports:
+            - containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            periodSeconds: 2
+          resources:
+            requests:
+              cpu: 5m
+              memory: 16Mi
+            limits:
+              memory: 48Mi

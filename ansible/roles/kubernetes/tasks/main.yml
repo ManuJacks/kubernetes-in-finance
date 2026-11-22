@@ -10,7 +10,7 @@
 - name: Download Kubernetes repository signing key
   ansible.builtin.get_url:
     url: "{{ kubernetes_apt_key_url }}"
-    dest: /tmp/kubernetes-release.key
+    dest: /etc/apt/keyrings/kubernetes-release.asc
     owner: root
     group: root
     mode: "0644"
@@ -18,7 +18,7 @@
 
 - name: Convert Kubernetes signing key to keyring
   ansible.builtin.command:
-    cmd: "gpg --dearmor --yes --output {{ kubernetes_apt_keyring }} /tmp/kubernetes-release.key"
+    cmd: "gpg --dearmor --yes --output {{ kubernetes_apt_keyring }} /etc/apt/keyrings/kubernetes-release.asc"
   args:
     creates: "{{ kubernetes_apt_keyring }}"
 

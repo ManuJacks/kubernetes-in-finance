@@ -1,0 +1,84 @@
+---
+# Alerts for platform and cluster resource exhaustion (CPU, Memory, Disk).
+# Targets control plane and worker nodes, as well as host capacity.
+groups:
+  - name: resource-limits
+    rules:
+      # Memory alerts. Host: node-exporter MemAvailable. Cluster nodes: cAdvisor
+      # root-cgroup working set, aggregated by instance because the two
+      # series carry different labels (the unaggregated form matched nothing:
+      # PRB-2026-11-22-node-memory). Working set understates pressure from
+      # tmpfs and page cache; node-level MemAvailable is action 5 there.
+      - alert: NodeMemoryPressureWarning
+        expr: |
+          (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) > 0.85
+          or
+          (sum by (instance) (container_memory_working_set_bytes{id="/"}) / sum by (instance) (machine_memory_bytes)) > 0.85
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "Node {{ $labels.instance }} memory usage is above 85%."
+          runbook: docs/monitoring/README.md
+
+      - alert: NodeMemoryPressureCritical
+        expr: |
+          (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) > 0.95
+          or
+          (sum by (instance) (container_memory_working_set_bytes{id="/"}) / sum by (instance) (machine_memory_bytes)) > 0.95
+        for: 2m
+        labels:
+          severity: page
+        annotations:
+          summary: "Node {{ $labels.instance }} memory usage is above 95%; risk of OOM eviction."
+          runbook: docs/monitoring/README.md
+
+      # CPU Alerts
+      - alert: NodeCpuHighUtilizationWarning
+        expr: |
+          (100 - (avg by (node, instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)) > 85
+          or
+          (sum by (instance) (rate(container_cpu_usage_seconds_total{id="/"}[5m])) / sum by (instance) (machine_cpu_cores) * 100) > 85
+        for: 10m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "Node {{ $labels.instance }} CPU utilization is sustained above 85% for 10 minutes."
+          runbook: docs/monitoring/README.md
+
+      - alert: NodeCpuSaturatedCritical
+        expr: |
+          (100 - (avg by (node, instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)) > 95
+          or
+          (sum by (instance) (rate(container_cpu_usage_seconds_total{id="/"}[5m])) / sum by (instance) (machine_cpu_cores) * 100) > 95
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "Node {{ $labels.instance }} CPU utilization is above 95%; control-plane or workload starvation risk."
+          runbook: docs/monitoring/README.md
+
+      # Disk Alerts
+      - alert: NodeDiskSpaceFillingFast
+        expr: |
+          (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) < 0.20
+          or
+          (container_fs_usage_bytes{device="/dev/sda1",id="/"} / container_fs_limit_bytes{device="/dev/sda1",id="/"}) > 0.80
+        for: 10m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "Root filesystem on {{ $labels.instance }} has less than 20% free space remaining."
+          runbook: docs/monitoring/README.md
+
+      - alert: NodeDiskSpaceCritical
+        expr: |
+          (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) < 0.10
+          or
+          (container_fs_usage_bytes{device="/dev/sda1",id="/"} / container_fs_limit_bytes{device="/dev/sda1",id="/"}) > 0.90
+        for: 3m
+        labels:
+          severity: page
+        annotations:
+          summary: "Root filesystem on {{ $labels.instance }} is above 90% full; immediate disk exhaustion risk."
+          runbook: docs/monitoring/README.md

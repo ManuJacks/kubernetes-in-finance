@@ -23,6 +23,13 @@ inhibit_rules:
   # A fast burn already pages; do not also page for the slow burn.
   - source_matchers: [alertname="ApiAvailabilityFastBurn"]
     target_matchers: [alertname="ApiAvailabilitySlowBurn"]
+  # A lost node already pages; the Pending pods and short-handed controllers
+  # it causes are symptoms of the same failure (ADR-006). Cluster-wide on
+  # purpose: these alerts carry no node label to match on. Unrelated
+  # controller failures during a node outage are hidden until it recovers.
+  - source_matchers: [alertname="KubeNodeNotReady"]
+    target_matchers:
+      - alertname=~"KubePodStuckPending|KubeDeploymentReplicasUnavailable|KubeStatefulSetReplicasUnavailable|KubeDaemonSetPodsUnavailable"
 
 receivers:
   - name: ntfy-page
