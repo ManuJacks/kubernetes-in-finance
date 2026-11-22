@@ -793,7 +793,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "| # | KPI | Target | How it is measured | Status |\n|---|---|---|---|---|\n| 1 | etcd RPO | **≤ 1 h** | Age of newest snapshot, continuous | Live (pages at 90 min) |\n| 2 | Backup success | **100 %** of attempts | Per-node outcome of every hourly run | Live (ticket on any failure) |\n| 3 | Restore drill freshness | **≤ 7 d** since last success | Weekly isolated restore drill (timer) | Live (ticket at 8 d) |\n| 4 | Control-plane failover RTO | **LB 30 s, control-plane node 60 s** | Game-day drills | Demonstrated 2026-11-21: 3.6 s / 5.3 s / no full outage |\n| 5 | Workload recovery | ≤ 6 min | Not yet drilled | **Defined, unmeasured** |\n| 6 | Control-plane node replacement | ≤ 30 min | Not yet drilled | **Defined, unmeasured** |\n| 7 | Full cluster restore RTO | ≤ 2 h | Not yet drilled (isolated restore only) | **Defined, unmeasured** |\n| 8 | API availability SLO | **99.9 %** over 30 d | `/readyz` through the VIP every 10 s | Live (burn-rate pages) |\n| 9 | Mean time to detect | **≤ 5 min** for a full API outage | `promtool` rule test: fast burn fires by 5 min | Tested in CI; delivery verified to ntfy |\n\nLab objectives for this platform, not production commitments. Unmeasured KPIs are listed so they are not mistaken for achieved ones."
+        "content": "| # | KPI | Target | How it is measured | Status |\n|---|---|---|---|---|\n| 1 | etcd RPO | **\u2264 1 h** | Age of newest snapshot, continuous | Live (pages at 90 min) |\n| 2 | Backup success | **100 %** of attempts | Per-node outcome of every hourly run | Live (ticket on any failure) |\n| 3 | Restore drill freshness | **\u2264 7 d** since last success | Weekly isolated restore drill (timer) | Live (ticket at 8 d) |\n| 4 | Control-plane failover RTO | **LB 30 s, control-plane node 60 s** | Game-day drills | Demonstrated 2026-11-21: 3.6 s / 5.3 s / no full outage |\n| 5 | Workload recovery | \u2264 6 min | Not yet drilled | **Defined, unmeasured** |\n| 6 | Control-plane node replacement | \u2264 30 min | Not yet drilled | **Defined, unmeasured** |\n| 7 | Full cluster restore RTO | \u2264 2 h | Not yet drilled (isolated restore only) | **Defined, unmeasured** |\n| 8 | API availability SLO | **99.9 %** over 30 d | `/readyz` through the VIP every 10 s | Live (burn-rate pages) |\n| 9 | Mean time to detect | **\u2264 5 min** for a full API outage | `promtool` rule test: fast burn fires by 5 min | Tested in CI; delivery verified to ntfy |\n\nLab objectives for this platform, not production commitments. Unmeasured KPIs are listed so they are not mistaken for achieved ones."
       }
     },
     {
@@ -1324,6 +1324,245 @@
           "mode": "multi"
         }
       }
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 62
+      },
+      "id": 29,
+      "panels": [],
+      "title": "Cluster Resource Utilization & Saturation (Capacity)",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth"
+          },
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 85
+              },
+              {
+                "color": "red",
+                "value": 95
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 63
+      },
+      "id": 30,
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum by (node) (rate(container_cpu_usage_seconds_total{id=\"/\"}[5m])) / sum by (node) (machine_cpu_cores) * 100",
+          "legendFormat": "{{node}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Node CPU Utilization (%)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth"
+          },
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 85
+              },
+              {
+                "color": "red",
+                "value": 95
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 63
+      },
+      "id": 31,
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum by (node) (container_memory_working_set_bytes{id=\"/\"}) / sum by (node) (machine_memory_bytes) * 100",
+          "legendFormat": "{{node}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Node Memory Utilization (%)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth"
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 71
+      },
+      "id": 32,
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "topk(10, sum by (namespace, pod) (rate(container_cpu_usage_seconds_total{container!=\"\", pod!=\"\"}[5m])))",
+          "legendFormat": "{{namespace}}/{{pod}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Top Pods by CPU Usage (Cores)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth"
+          },
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 71
+      },
+      "id": 33,
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "topk(10, sum by (namespace, pod) (container_memory_working_set_bytes{container!=\"\", pod!=\"\"}))",
+          "legendFormat": "{{namespace}}/{{pod}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Top Pods by Memory Working Set",
+      "type": "timeseries"
     }
   ],
   "editable": false

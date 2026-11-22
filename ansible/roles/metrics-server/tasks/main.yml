@@ -1,0 +1,22 @@
+---
+- name: Add the Metrics Server Helm repository
+  kubernetes.core.helm_repository:
+    name: "{{ metrics_server_helm_repo_name }}"
+    repo_url: "{{ metrics_server_helm_repo_url }}"
+    state: present
+
+- name: Install or update Metrics Server
+  kubernetes.core.helm:
+    name: metrics-server
+    chart_ref: "{{ metrics_server_helm_repo_name }}/metrics-server"
+    chart_version: "{{ metrics_server_chart_version }}"
+    release_namespace: "{{ metrics_server_namespace }}"
+    create_namespace: false
+    kubeconfig: "{{ metrics_server_kubeconfig }}"
+    state: present
+    wait: true
+    wait_timeout: "5m"
+    values:
+      args:
+        - --kubelet-insecure-tls
+        - --kubelet-preferred-address-types=InternalIP,ExternalIP,Hostname

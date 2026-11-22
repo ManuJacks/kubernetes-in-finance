@@ -1,0 +1,6 @@
+---
+metrics_server_helm_repo_name: "metrics-server"
+metrics_server_helm_repo_url: "https://kubernetes-sigs.github.io/metrics-server/"
+metrics_server_chart_version: "3.12.2"
+metrics_server_namespace: "kube-system"
+metrics_server_kubeconfig: "{{ lookup('env', 'HOME') }}/.kube/kubernetes-in-finance.conf"

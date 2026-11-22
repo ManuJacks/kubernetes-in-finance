@@ -1,5 +1,6 @@
 ---
 rule_files:
+  - ../rules/resource-limits.yml
   - ../rules/api-availability-slo.yml
   - ../rules/etcd-backup-rpo.yml
   - ../rules/drills.yml
@@ -255,4 +256,36 @@ tests:
               job: alertmanager
             exp_annotations:
               summary: "Alertmanager failed to deliver notifications via webhook in the last 15 minutes."
+              runbook: docs/monitoring/README.md
+
+  # Resource limits: memory and disk alert tests
+  - interval: 1m
+    input_series:
+      - series: 'node_memory_MemAvailable_bytes{instance="node1"}'
+        values: '100000000x20'
+      - series: 'node_memory_MemTotal_bytes{instance="node1"}'
+        values: '1000000000x20'
+      - series: 'node_filesystem_avail_bytes{mountpoint="/", instance="node1"}'
+        values: '50000000x20'
+      - series: 'node_filesystem_size_bytes{mountpoint="/", instance="node1"}'
+        values: '1000000000x20'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: NodeMemoryPressureWarning
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              instance: node1
+            exp_annotations:
+              summary: "Node node1 memory usage is above 85%."
+              runbook: docs/monitoring/README.md
+      - eval_time: 15m
+        alertname: NodeDiskSpaceCritical
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              instance: node1
+              mountpoint: /
+            exp_annotations:
+              summary: "Root filesystem on node1 is above 90% full; immediate disk exhaustion risk."
               runbook: docs/monitoring/README.md

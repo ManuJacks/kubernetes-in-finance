@@ -48,6 +48,29 @@
     mode: "0644"
   notify: Restart monitoring stack
 
+- name: Install cluster credentials for Prometheus kubelet and cadvisor metrics scraping
+  ansible.builtin.copy:
+    content: "{{ item.content }}"
+    dest: "{{ monitoring_home }}/config/prometheus/{{ item.filename }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - filename: kubernetes-ca.crt
+      content: >-
+        {{ ((monitoring_kubeconfig_raw.content | b64decode | from_yaml).clusters[0].cluster['certificate-authority-data'])
+           | b64decode }}
+      mode: "0644"
+    - filename: kubernetes-client.crt
+      content: >-
+        {{ ((monitoring_kubeconfig_raw.content | b64decode | from_yaml).users[0].user['client-certificate-data'])
+           | b64decode }}
+      mode: "0644"
+    - filename: kubernetes-client.key
+      content: >-
+        {{ ((monitoring_kubeconfig_raw.content | b64decode | from_yaml).users[0].user['client-key-data'])
+           | b64decode }}
+      mode: "0644"
+  notify: Restart monitoring stack
+
 - name: Generate the Grafana admin password (stored outside the repository)
   ansible.builtin.set_fact:
     monitoring_grafana_password: >-
