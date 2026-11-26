@@ -13,6 +13,9 @@ metadata:
   labels:
     app.kubernetes.io/part-of: kif-tenants
     kif.io/tenant: team-a
+    # Platform approval for incident diagnostics: production-debug's admission
+    # policy only admits its RoleBindings in namespaces carrying this label.
+    production-debug/diagnosable: "true"
     pod-security.kubernetes.io/enforce: restricted
     pod-security.kubernetes.io/enforce-version: latest
     pod-security.kubernetes.io/warn: restricted

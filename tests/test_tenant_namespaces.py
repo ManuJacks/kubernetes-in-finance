@@ -48,3 +48,20 @@ def test_workloads_are_restricted_compliant():
                 assert sc["allowPrivilegeEscalation"] is False
                 assert sc["capabilities"]["drop"] == ["ALL"]
                 assert "limits" in c["resources"] and "requests" in c["resources"]
+
+
+def test_diagnostic_approval_label_is_explicit():
+    """production-debug's admission policy admits its bindings only where the
+    platform set production-debug/diagnosable=true; the value must be the
+    string "true", not a YAML boolean."""
+    for path in TENANT_FILES:
+        ns = next(d for d in docs(path) if d["kind"] == "Namespace")
+        assert ns["metadata"]["labels"]["production-debug/diagnosable"] == "true", path
+
+
+def test_only_the_namespace_carries_the_approval_label():
+    for path in TENANT_FILES:
+        for d in docs(path):
+            if d["kind"] != "Namespace":
+                labels = d["metadata"].get("labels", {})
+                assert "production-debug/diagnosable" not in labels, (path, d["kind"])
