@@ -1,20 +1,28 @@
 # Vault validation results
 
-This is an evidence record template. Do not mark a control passed without
-capturing the corresponding redacted command output or audit evidence.
+Do not mark a control passed without linking captured, redacted command
+output or audit evidence.
 
-| Control | Status | Evidence reference | Notes |
+The first version of this record (commit 8da11b1) marked controls passed
+with descriptions only. They were re-run and captured on 2026-11-26 about
+21:41 EST; the links below point to that capture.
+
+E = [2026-11-26 evidence](evidence/2026-11-26-vault-kubernetes-auth.md)
+
+| Control | Status | Evidence | Date |
 |---|---|---|---|
-| Kubernetes TokenReview identity exists | Passed | `vault-token-reviewer` has `system:auth-delegator`; TokenReview check returned `yes` | 2026-11-26 |
-| Vault validates KIF Internal CA | Passed | Smoke test completed over verified TLS | 2026-11-26 |
-| Pod resolves `vault.kif.io` | Passed | Smoke test reached Vault | 2026-11-26 |
-| Pod reaches Vault over TLS | Passed | Smoke test completed login request | 2026-11-26 |
-| `debug-system/prod-debug-sa` authenticates | Passed | Kubernetes auth returned `authenticated: true` | 2026-11-26 |
-| Token is short-lived | Passed | `lease_duration=900` seconds | 2026-11-26 |
-| Application secret path is allowed | Passed | HTTP status `200` | 2026-11-26 |
-| Database secret path is denied | Passed | HTTP status `403` | 2026-11-26 |
-| Vault audit records auth and access | Pending |  |  |
-| Independent snapshot restore succeeds | Pending |  |  |
+| Kubernetes TokenReview identity exists | Passed | E §2 | 2026-11-26 |
+| Workload SA cannot call TokenReview itself | Passed | E §2 | 2026-11-26 |
+| Pod resolves `vault.kif.io` and validates KIF Internal CA | Passed | E §1 (login over verified TLS) | 2026-11-26 |
+| `debug-system/prod-debug-sa` authenticates | Passed | E §1 `authenticated: true` | 2026-11-26 |
+| Token is short-lived | Passed | E §1 `lease_duration: 900`; E §3 role TTLs | 2026-11-26 |
+| Application secret path is allowed | Passed | E §1 HTTP `200` | 2026-11-26 |
+| Database secret path is denied | Passed | E §1 HTTP `403` | 2026-11-26 |
+| Deployed policies match `vault/policies/` | Passed | E §4 | 2026-11-26 |
+| Vault uses the long-lived TokenReview credential | Pending | CHG-2026-11-26, step 3 | |
+| Logins still work more than 24 h after configuration | Pending | Re-run smoke test after the CHG | |
+| Vault audit records auth and access | Pending | Audit log not readable by operator account | |
+| Independent snapshot restore succeeds | Pending | | |
 
 Never include JWTs, Vault tokens, SecretIDs, or secret values in this record.
 

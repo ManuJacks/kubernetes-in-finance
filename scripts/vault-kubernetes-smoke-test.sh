@@ -4,7 +4,7 @@ set -euo pipefail
 
 KUBECONFIG_PATH="${KUBECONFIG:-$HOME/.kube/kubernetes-in-finance.conf}"
 NAMESPACE="${VAULT_TEST_NAMESPACE:-debug-system}"
-CA_FILE="${VAULT_INTERNAL_CA_FILE:-$HOME/.local/share/kubernetes-in-finance/kif-internal-root-ca.crt}"
+CA_FILE="${VAULT_INTERNAL_CA_FILE:-/usr/local/share/ca-certificates/kif-internal-root-ca.crt}"
 VAULT_ADDR_VALUE="${VAULT_ADDR:-https://vault.kif.io:8200}"
 VAULT_ROLE="${VAULT_KUBERNETES_ROLE:-prod-debug}"
 APP_PATH="${VAULT_APP_PATH:-production-debug/application/smoke-test}"

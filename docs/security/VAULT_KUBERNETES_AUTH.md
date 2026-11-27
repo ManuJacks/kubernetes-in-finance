@@ -10,10 +10,12 @@ Ansible manages only Kubernetes prerequisites:
 
 - `kube-system/vault-token-reviewer`;
 - its `system:auth-delegator` binding;
+- its long-lived token Secret `vault-token-reviewer-token` (ADR-007);
 - retrieval of the Kubernetes CA used for TokenReview verification.
 
 Vault auth mounts, Vault roles, policies, and Vault tokens are configured
-manually by an authorized operator. This prevents an infrastructure playbook
+manually by an authorized operator from the reviewed source in
+[`vault/policies/`](../../vault/policies/). This prevents an infrastructure playbook
 from silently changing the secrets control plane.
 
 ## Target identity

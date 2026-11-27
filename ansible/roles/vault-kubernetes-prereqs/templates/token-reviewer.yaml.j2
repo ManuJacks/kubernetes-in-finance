@@ -16,3 +16,15 @@ subjects:
   - kind: ServiceAccount
     name: {{ vault_token_reviewer_serviceaccount }}
     namespace: {{ vault_token_reviewer_namespace }}
+---
+# Long-lived TokenReview credential for the external Vault (ADR-007).
+# Vault stores this JWT in auth/kubernetes/config; a short-lived token would
+# break every login once it expired. Revoke by deleting this Secret.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ vault_token_reviewer_secret }}
+  namespace: {{ vault_token_reviewer_namespace }}
+  annotations:
+    kubernetes.io/service-account.name: {{ vault_token_reviewer_serviceaccount }}
+type: kubernetes.io/service-account-token
