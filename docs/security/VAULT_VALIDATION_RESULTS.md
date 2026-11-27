@@ -22,7 +22,8 @@ E = [2026-11-26 evidence](evidence/2026-11-26-vault-kubernetes-auth.md)
 | Vault uses the long-lived TokenReview credential | Pending | CHG-2026-11-26, step 3 | |
 | Logins still work more than 24 h after configuration | Pending | Re-run smoke test after the CHG | |
 | Vault audit records auth and access | Pending | Audit log not readable by operator account | |
-| Independent snapshot restore succeeds | Pending | | |
+| Encrypted backup on removable media | Passed | `kif-vault-20261127T054931Z.snap.gpg`, SHA-256 verified, gpg AES256 | 2026-11-27 |
+| Independent snapshot restore succeeds | Failed (run 1), re-run pending | [restore drill results](../runbooks/vault-restore-drill.md#results): 5/6 checks, 258 s; failed check was a drill defect | 2026-11-27 |
 
 Never include JWTs, Vault tokens, SecretIDs, or secret values in this record.
 

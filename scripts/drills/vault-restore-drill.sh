@@ -99,7 +99,9 @@ c_role()      {
     and .bound_service_account_namespaces == ["debug-system"]
     and .token_policies == ["production-debug-secrets"] and .token_ttl == 900'
 }
-c_canary()    { vx kv metadata get -format=json "$canary" | jq -e '.data.current_version >= 1'; }
+# Listing the parent shows key names only: no values, no metadata. kif-admin
+# may list but not read secret metadata, so a metadata read would be denied.
+c_canary()    { vx kv list -format=json "${canary%/*}" | jq -e --arg k "${canary##*/}" 'index($k) != null'; }
 c_audit()     { vx audit list -format=json | jq -e 'length >= 1'; }
 
 # --- Restore ------------------------------------------------------------------
@@ -143,7 +145,11 @@ restore_drill() { # file.gpg
     if [[ -n "${unseal_keys+x}" ]]; then
       for k in "${unseal_keys[@]}"; do docker exec "$ct" vault operator unseal "$k" >/dev/null; done
     else
-      while [[ "$(sealed "$ct")" == true ]]; do docker exec -it "$ct" vault operator unseal >/dev/null; done
+      local n=1
+      while [[ "$(sealed "$ct")" == true ]]; do
+        echo ">>> Unseal share $n of 3: paste it and press Enter (input is hidden)" >&2
+        docker exec -it "$ct" vault operator unseal >/dev/null; n=$((n + 1))
+      done
     fi
   else
     log "restored copy did not seal (unexpected, recorded)"
@@ -156,7 +162,8 @@ restore_drill() { # file.gpg
   if [[ -n "${login_password:-}" ]]; then
     docker exec "$ct" vault login -method=userpass username="$login_user" password="$login_password" >/dev/null
   else
-    docker exec -it "$ct" vault login -method=userpass username="$login_user" >/dev/null
+    echo ">>> Password for $login_user on the RESTORED copy (input is hidden)" >&2
+    docker exec -it "$ct" vault login -no-print -method=userpass username="$login_user"
   fi
   t_login=$(now)
 
@@ -164,7 +171,7 @@ restore_drill() { # file.gpg
   check "auth methods kubernetes/ and userpass/ restored"  c_auth
   check "policies identical to vault/policies/"            c_policies
   check "role prod-debug bound to debug-system/prod-debug-sa, 900 s" c_role
-  check "canary secret $canary present (metadata only)"    c_canary
+  check "canary secret $canary present (key name only)"    c_canary
   check "audit device configuration restored"              c_audit
   t_verified=$(now)
 
@@ -244,7 +251,7 @@ path "sys/policies/acl/*" { capabilities = ["read"] }
 path "sys/audit" { capabilities = ["read", "sudo"] }
 path "sys/leader" { capabilities = ["read"] }
 path "auth/kubernetes/role/*" { capabilities = ["read"] }
-path "secret/metadata/*" { capabilities = ["read"] }
+path "secret/metadata/*" { capabilities = ["list"] }
 EOF
   s auth enable kubernetes
   s write auth/kubernetes/config kubernetes_host=https://10.97.3.100:6443 disable_local_ca_jwt=true

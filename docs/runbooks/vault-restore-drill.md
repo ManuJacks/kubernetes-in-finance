@@ -43,7 +43,9 @@ unplugged and stored elsewhere.
 - **Self-test.** `self-test` runs the same restore path against a throwaway
   source Vault loaded with dummy data and the real `vault/policies/`. It
   needs no secrets or human input, so it can be run after any change to the
-  script.
+  script. Its login policy must grant **no more** than the production
+  operator's (`kif-admin`): when it granted metadata `read`, the self-test
+  passed a check that production then failed (run 1).
 
 ## Running it
 
@@ -106,9 +108,11 @@ monitoring textfile directory.
 | Still sealed after shares | Wrong shares, or shares from another cluster |
 | Policies differ | `vault/policies/` and production have drifted: reconcile (repo is the reviewed source) |
 | Role, auth or canary missing | The snapshot predates that configuration, or the source was changed after it was taken |
+| A check fails with permission denied | The check needs a capability the operator's policy does not grant: a drill defect, not a backup failure. Fix the check and re-run; the run still counts as failed |
 
 ## Results
 
 | Date | Snapshot | Result | Restore time (incl. human steps) | Notes |
 |---|---|---|---|---|
 | 2026-11-26 | self-test (dummy data) | Success, 6/6 checks | 18 s | First run found the 1/1 barrier problem (fixed) |
+| 2026-11-27 | `kif-vault-20261127T054931Z.snap.gpg` (production, USB disk) | **Failed**, 5/6 checks | 258 s (unseal 210 s of it) | Backup, checksum, decryption, restore, unseal with 3 production shares and login all worked. Canary check failed: `kif-admin` may `list` but not `read` secret metadata, so the check was denied. Production lists `smoke-test` under that path, but the restored copy was not shown to contain it. Check changed to a key listing; unseal and password prompts were invisible (stdout to `/dev/null`) and are now shown. Re-run required |
