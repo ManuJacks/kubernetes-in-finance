@@ -55,3 +55,14 @@ def test_playbook_never_contacts_vault():
         assert "vault " not in text and "VAULT_ADDR" not in text and "8200" not in text, f
     # The API endpoint comes from the kubeconfig, not a hardcoded address.
     assert "10.97.3.100" not in read(ROLE, "tasks", "main.yml")
+
+
+def test_restore_drill_keeps_restored_secrets_isolated():
+    script = read("scripts", "drills", "vault-restore-drill.sh")
+    assert "--network none" in script
+    for path in ("/vault/raft", "/var/log/vault", "/tmp"):
+        assert f"--tmpfs {path}" in script, path
+    # Plaintext snapshots only in RAM; the barrier mirrors production 5/3.
+    assert "mktemp -p /dev/shm" in script
+    assert "-key-shares=5 -key-threshold=3" in script
+    assert "trap cleanup EXIT" in script

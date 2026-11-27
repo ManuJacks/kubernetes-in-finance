@@ -25,8 +25,13 @@ encrypted backup and restore drill are still required.
   Kubernetes manifests, chat, or incident bundles.
 - Preserve audit evidence for administrative rotations.
 
-## Deferred work
+## Backup and restore drill
 
-Define and rehearse documented procedures for snapshot export, encrypted
-off-host storage, restore into an isolated Vault instance, seal/unseal
-operations, and post-restore audit verification.
+Snapshot export, encrypted storage on removable media, restore into an
+isolated Vault instance, unseal with production shares and post-restore
+verification are scripted and timed in the
+[Vault backup and restore drill](../runbooks/vault-restore-drill.md).
+
+Still deferred: rebuilding the Vault host itself (configuration, TLS
+material, systemd unit), and post-restore verification of audit-log
+contents.

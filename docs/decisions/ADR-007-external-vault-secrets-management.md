@@ -138,9 +138,15 @@ cross-boundary denial proven (200 / 403).
 3. Integrate the production-debug workload (today only the smoke test uses
    `prod-debug-sa` against Vault).
 4. Create an independent encrypted backup and demonstrate restore, with a
-   measured restore time.
+   measured restore time
+   ([drill](../runbooks/vault-restore-drill.md); script self-tested
+   2026-11-26, production run pending).
 5. Add Vault monitoring and alerting under ADR-006.
 6. Implement audit log rotation and protection.
+7. Set an `audience` on the `prod-debug` role (Vault warns that none is
+   configured; it narrows which JWTs the role accepts).
+8. Make the Vault host rebuildable: `vault.hcl`, TLS material and the
+   systemd unit are outside the snapshot and outside this repository.
 
 ## Principles
 
