@@ -19,6 +19,7 @@
 # copy. Nothing typed is printed or stored outside the container.
 
 set -euo pipefail
+export DOCKER_CLI_HINTS=false   # no "What's next" adverts in drill output
 
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 image="${VAULT_DRILL_IMAGE:-hashicorp/vault:2.2.2}"

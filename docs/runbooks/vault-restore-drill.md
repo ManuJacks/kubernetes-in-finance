@@ -5,8 +5,11 @@ backup held on separate media, and measure how long that takes, including
 the human steps. ADR-007 calls recoverability a principle; this drill is
 what makes it a fact.
 
-No restore-time target is set yet. The first runs establish a baseline;
-a target follows from measurements, not the other way round.
+No restore-time target is set yet. Baseline from the first successful
+production run (2026-11-27): **96 s** from start to verified restore, about
+75 s of it human input. A target follows from a few more runs, not from one.
+The baseline covers restoring *data* into a running Vault; rebuilding the
+host would add to it.
 
 ## What it proves, and what it does not
 
@@ -116,3 +119,4 @@ monitoring textfile directory.
 |---|---|---|---|---|
 | 2026-11-26 | self-test (dummy data) | Success, 6/6 checks | 18 s | First run found the 1/1 barrier problem (fixed) |
 | 2026-11-27 | `kif-vault-20261127T054931Z.snap.gpg` (production, USB disk) | **Failed**, 5/6 checks | 258 s (unseal 210 s of it) | Backup, checksum, decryption, restore, unseal with 3 production shares and login all worked. Canary check failed: `kif-admin` may `list` but not `read` secret metadata, so the check was denied. Production lists `smoke-test` under that path, but the restored copy was not shown to contain it. Check changed to a key listing; unseal and password prompts were invisible (stdout to `/dev/null`) and are now shown. Re-run required |
+| 2026-11-27 | same backup (production, USB disk) | **Success**, 6/6 checks | **96 s** | Phases from start: container ready 10 s, decrypted 19 s, restored 19 s, unsealed 86 s, logged in 95 s, verified 96 s. Human steps (passphrase, 3 shares, password) are about 75 s of the 96. No container or `/dev/shm` file left; `platform_drill_last_success` 1 |

@@ -139,9 +139,10 @@ cross-boundary denial proven (200 / 403).
    `prod-debug-sa` against Vault).
 4. Create an independent encrypted backup and demonstrate restore, with a
    measured restore time
-   ([drill](../runbooks/vault-restore-drill.md): encrypted backup done
-   2026-11-27; first production restore 5/6 checks in 258 s, re-run
-   pending after a check defect).
+   Done 2026-11-27 for data
+   ([drill](../runbooks/vault-restore-drill.md)): encrypted backup on a USB
+   disk, restore into an isolated instance 6/6 checks in 96 s (run 1 failed
+   on a check defect). Host rebuild remains open (item 8).
 5. Add Vault monitoring and alerting under ADR-006.
 6. Implement audit log rotation and protection.
 7. Set an `audience` on the `prod-debug` role (Vault warns that none is
