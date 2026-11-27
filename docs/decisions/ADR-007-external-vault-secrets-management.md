@@ -1,6 +1,7 @@
-# ADR-00X: Centralized secrets management with external HashiCorp Vault
+# ADR-007: Centralized secrets management with external HashiCorp Vault
 
-- **Status:** Accepted direction; implementation and validation in progress
+- **Status:** Accepted. Kubernetes authentication implemented and validated
+  2026-11-26; backup/restore, audit evidence and monitoring outstanding
 - **Scope:** Kubernetes-in-Finance (KIF) and the production-debug platform
 - **Date:** 2026-11-26
 
@@ -19,6 +20,11 @@ access must be least-privilege, auditable, revocable, and time-limited.
 Vault runs directly on the Linux Mint host as a systemd-managed service. It is
 not deployed as a Kubernetes pod, Helm release, or operator. Vault therefore
 remains available when the Kubernetes cluster is unavailable.
+
+This is independence from the *cluster*, not from the *host*. The cluster
+nodes are Multipass VMs on the same host, so a host failure takes out both
+(the 2026-11-22 Sev 1 was a host-side `multipassd` crash). Host-level
+independence needs a second machine and is out of scope for this lab.
 
 ### Storage and availability
 
@@ -63,9 +69,39 @@ Audit data is sensitive and requires restricted access, rotation, disk
 protection, and backup.
 
 Vault uses Shamir recovery with five shares and a threshold of three. Recovery
-material is stored independently in KeePassXC. The initial Raft snapshot was
+material is stored independently in KeePassXC.
+
+This is a single-operator lab: one person holds every share. The 3-of-5
+threshold therefore protects against losing individual shares, not against
+a single insider. With more operators, shares would be split across people
+so that no one person can unseal alone. The initial Raft snapshot was
 created at `~/vault-backups/kif-vault-initial.snap`, but independent encrypted
 backup and restore testing remain outstanding.
+
+### TokenReview credential
+
+Vault calls the Kubernetes TokenReview API with a reviewer JWT stored in its
+`auth/kubernetes/config`. Because Vault runs outside the cluster, it has no
+local ServiceAccount token to fall back on. Three options:
+
+| Option | Rejected / chosen because |
+|---|---|
+| Short-lived token (`kubectl create token --duration=10m`) | Rejected: Vault keeps using the stored JWT; once it expires every login fails. The first runbook draft did this |
+| No reviewer JWT (Vault reuses each client's JWT) | Rejected: every client ServiceAccount, including `prod-debug-sa`, would need `system:auth-delegator`, widening workload privileges |
+| Long-lived token Secret for `kube-system/vault-token-reviewer` | **Chosen** |
+
+Trade-off accepted: a non-expiring credential that can create TokenReviews
+and SubjectAccessReviews exists in `kube-system` and in Vault's auth config.
+It grants nothing else; it is revoked by deleting the Secret and rotated by
+recreating it and rewriting the Vault config
+([runbook](../runbooks/vault-kubernetes-auth.md#rotate-the-tokenreview-credential)).
+
+### Policies as code
+
+Vault policies are applied manually, but their source is reviewed in
+[`vault/policies/`](../../vault/policies/) and must match the deployed
+policies (`vault policy read <name>`). A test fails if the application
+policy ever references database paths.
 
 ## Kubernetes authentication flow
 
@@ -92,11 +128,18 @@ independent backup procedures, and separate Vault monitoring.
 
 ## Outstanding work
 
-1. Configure and validate Kubernetes authentication.
-2. Integrate the production-debug workload.
-3. Prove application/database cross-boundary denial.
-4. Create independent encrypted backup and demonstrate restore.
-5. Add Vault monitoring and alerting.
+Done 2026-11-26 ([evidence](../security/VAULT_VALIDATION_RESULTS.md)):
+Kubernetes authentication configured and validated; application/database
+cross-boundary denial proven (200 / 403).
+
+1. Switch the Vault config to the long-lived TokenReview credential
+   (manual step, [CHG-2026-11-26](../changes/CHG-2026-11-26-vault-kubernetes-auth.md)).
+2. Capture Vault audit-log evidence for auth and read events.
+3. Integrate the production-debug workload (today only the smoke test uses
+   `prod-debug-sa` against Vault).
+4. Create an independent encrypted backup and demonstrate restore, with a
+   measured restore time.
+5. Add Vault monitoring and alerting under ADR-006.
 6. Implement audit log rotation and protection.
 
 ## Principles

@@ -10,6 +10,7 @@ The Ansible playbook changes only Kubernetes:
 
 - creates `kube-system/vault-token-reviewer`;
 - grants it the `system:auth-delegator` ClusterRole;
+- creates its long-lived token Secret `kube-system/vault-token-reviewer-token`;
 - saves the Kubernetes CA for the Vault operator;
 - does not contact Vault;
 - does not create Vault auth mounts, policies, roles, tokens, or secrets.
@@ -84,12 +85,17 @@ export KUBERNETES_ISSUER=https://kubernetes.default.svc.cluster.local
 export KUBERNETES_CA_CERT="$HOME/.local/share/kubernetes-in-finance/vault-kubernetes-ca.crt"
 ```
 
-Create a short-lived TokenReview JWT only when performing the configuration;
-do not commit or paste it into chat:
+Read the long-lived TokenReview JWT from the Secret the playbook created; do
+not commit it, print it or paste it into chat:
 
 ```bash
-export TOKEN_REVIEWER_JWT="$(kubectl -n kube-system create token vault-token-reviewer --duration=10m)"
+export TOKEN_REVIEWER_JWT="$(kubectl -n kube-system get secret vault-token-reviewer-token \
+  -o jsonpath='{.data.token}' | base64 -d)"
 ```
+
+Do not use `kubectl create token` here. Vault keeps the reviewer JWT and
+uses it for every login; a short-lived token makes every login fail once it
+expires (ADR-007, "TokenReview credential").
 
 Then, as an authorized Vault administrator:
 
@@ -133,11 +139,39 @@ and Vault audit event metadata.
 - [ ] Ansible output shows Kubernetes resources applied.
 - [ ] `vault-token-reviewer` is bound to `system:auth-delegator`.
 - [ ] Vault Kubernetes auth configuration was reviewed by a human.
+- [ ] Vault uses the long-lived `vault-token-reviewer-token`, not a `kubectl create token` JWT.
 - [ ] Vault role is bound exactly to `debug-system/prod-debug-sa`.
 - [ ] Application policy is `production-debug-secrets` only.
 - [ ] Database access is denied.
 - [ ] Vault audit log contains authentication and read events without secret values.
 - [ ] Kubernetes API, pod-to-Vault routing, DNS, and TLS checks pass.
+
+## Rotate the TokenReview credential
+
+Rotate on suspected exposure, when an operator with access leaves, and at
+least yearly. Logins fail from step 1 until step 3 completes (about a
+minute), so do it in a change window:
+
+```bash
+# 1. Revoke the old token by deleting its Secret.
+kubectl -n kube-system delete secret vault-token-reviewer-token
+# 2. Recreate it.
+ANSIBLE_CONFIG=ansible/ansible.cfg ansible-playbook \
+  -i ansible/inventory/hosts.yml ansible/playbooks/14-vault-kubernetes-prereqs.yml
+# 3. Rewrite the Vault config. The write does not merge with the existing
+#    config, so supply every field (variables from "Manual Vault configuration").
+TOKEN_REVIEWER_JWT="$(kubectl -n kube-system get secret vault-token-reviewer-token \
+  -o jsonpath='{.data.token}' | base64 -d)"
+vault write auth/kubernetes/config \
+  token_reviewer_jwt="$TOKEN_REVIEWER_JWT" \
+  kubernetes_host="$KUBERNETES_HOST" \
+  kubernetes_ca_cert=@"$KUBERNETES_CA_CERT" \
+  issuer="$KUBERNETES_ISSUER"
+unset TOKEN_REVIEWER_JWT
+vault read auth/kubernetes/config   # check: token_reviewer_jwt_set=true, host and issuer unchanged
+# 4. Prove it.
+scripts/vault-kubernetes-smoke-test.sh
+```
 
 ## Recovery
 
@@ -145,6 +179,7 @@ To remove the Kubernetes TokenReview prerequisite after disabling Vault
 Kubernetes authentication and confirming no other Vault consumer uses it:
 
 ```bash
+kubectl -n kube-system delete secret vault-token-reviewer-token
 kubectl delete clusterrolebinding vault-token-reviewer
 kubectl -n kube-system delete serviceaccount vault-token-reviewer
 ```

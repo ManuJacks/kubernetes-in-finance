@@ -29,6 +29,40 @@
   register: vault_token_reviewer_apply
   changed_when: "'created' in vault_token_reviewer_apply.stdout or 'configured' in vault_token_reviewer_apply.stdout"
 
+- name: Wait for the TokenReview credential to be populated
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ vault_kubeconfig }}"
+      - -n
+      - "{{ vault_token_reviewer_namespace }}"
+      - get
+      - secret
+      - "{{ vault_token_reviewer_secret }}"
+      - -o
+      - jsonpath={.data.token}
+  register: vault_token_reviewer_secret_token
+  until: vault_token_reviewer_secret_token.stdout | length > 0
+  retries: 10
+  delay: 2
+  changed_when: false
+  no_log: true
+
+- name: Read Kubernetes API endpoint from the KIF kubeconfig
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ vault_kubeconfig }}"
+      - config
+      - view
+      - --minify
+      - -o
+      - jsonpath={.clusters[0].cluster.server}
+  register: vault_kubernetes_host
+  changed_when: false
+
 - name: Read Kubernetes CA for manual Vault configuration
   ansible.builtin.shell: >-
     kubectl --kubeconfig {{ vault_kubeconfig | quote }}
@@ -52,7 +86,8 @@
   ansible.builtin.debug:
     msg:
       - "Kubernetes TokenReview identity: {{ vault_token_reviewer_namespace }}/{{ vault_token_reviewer_serviceaccount }}"
-      - "Kubernetes API endpoint: https://10.97.3.100:6443"
+      - "TokenReview credential: Secret {{ vault_token_reviewer_namespace }}/{{ vault_token_reviewer_secret }} (long-lived)"
+      - "Kubernetes API endpoint: {{ vault_kubernetes_host.stdout }}"
       - "Kubernetes issuer: https://kubernetes.default.svc.cluster.local"
       - "Kubernetes CA saved at: {{ vault_kubernetes_ca_file }}"
       - "Vault-side auth configuration remains a manual, human-authorized step."
