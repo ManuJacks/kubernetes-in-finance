@@ -1,0 +1,12 @@
+---
+# Kubernetes-side prerequisites only. This playbook does not contact Vault and
+# does not create or modify Vault auth mounts, policies, roles, or tokens.
+- name: Prepare Kubernetes for manual Vault Kubernetes auth configuration
+  hosts: localhost
+  connection: local
+  become: false
+  gather_facts: true
+  vars:
+    ansible_become: false
+  roles:
+    - vault-kubernetes-prereqs

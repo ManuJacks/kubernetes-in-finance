@@ -1,0 +1,5 @@
+---
+vault_token_reviewer_namespace: "kube-system"
+vault_token_reviewer_serviceaccount: "vault-token-reviewer"
+vault_kubeconfig: "{{ ansible_env.HOME }}/.kube/kubernetes-in-finance.conf"
+vault_kubernetes_ca_file: "{{ ansible_env.HOME }}/.local/share/kubernetes-in-finance/vault-kubernetes-ca.crt"

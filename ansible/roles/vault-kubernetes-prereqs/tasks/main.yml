@@ -1,0 +1,58 @@
+---
+- name: Validate KIF kubeconfig exists
+  ansible.builtin.assert:
+    that:
+      - vault_kubeconfig is file
+    fail_msg: "The KIF kubeconfig is required; run playbook 05 first."
+
+- name: Ensure local Vault integration state directory exists
+  ansible.builtin.file:
+    path: "{{ vault_kubernetes_ca_file | dirname }}"
+    state: directory
+    mode: "0700"
+
+- name: Render Kubernetes TokenReview identity
+  ansible.builtin.template:
+    src: token-reviewer.yaml.j2
+    dest: "{{ vault_kubernetes_ca_file | dirname }}/vault-token-reviewer.yaml"
+    mode: "0600"
+
+- name: Apply Kubernetes TokenReview identity
+  ansible.builtin.command:
+    argv:
+      - kubectl
+      - --kubeconfig
+      - "{{ vault_kubeconfig }}"
+      - apply
+      - -f
+      - "{{ vault_kubernetes_ca_file | dirname }}/vault-token-reviewer.yaml"
+  register: vault_token_reviewer_apply
+  changed_when: "'created' in vault_token_reviewer_apply.stdout or 'configured' in vault_token_reviewer_apply.stdout"
+
+- name: Read Kubernetes CA for manual Vault configuration
+  ansible.builtin.shell: >-
+    kubectl --kubeconfig {{ vault_kubeconfig | quote }}
+    -n {{ vault_token_reviewer_namespace | quote }}
+    get configmap kube-root-ca.crt
+    -o jsonpath='{.data.ca\.crt}'
+  args:
+    executable: /bin/bash
+  register: vault_kubernetes_ca
+  changed_when: false
+  no_log: true
+
+- name: Save Kubernetes CA for manual Vault configuration
+  ansible.builtin.copy:
+    content: "{{ vault_kubernetes_ca.stdout }}\n"
+    dest: "{{ vault_kubernetes_ca_file }}"
+    mode: "0600"
+  no_log: true
+
+- name: Report manual Vault configuration inputs without credentials
+  ansible.builtin.debug:
+    msg:
+      - "Kubernetes TokenReview identity: {{ vault_token_reviewer_namespace }}/{{ vault_token_reviewer_serviceaccount }}"
+      - "Kubernetes API endpoint: https://10.97.3.100:6443"
+      - "Kubernetes issuer: https://kubernetes.default.svc.cluster.local"
+      - "Kubernetes CA saved at: {{ vault_kubernetes_ca_file }}"
+      - "Vault-side auth configuration remains a manual, human-authorized step."
