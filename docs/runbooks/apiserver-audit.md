@@ -19,7 +19,8 @@ Policy: `ansible/roles/apiserver-audit/files/audit-policy.yaml` (first match win
 
 Logs go to `/var/log/kubernetes/audit/audit.log` on each control plane
 (root only, 0700), rotated by the API server: 50 MiB per file, 4 old files,
-7 days. Worst case is about 250 MiB per node.
+7 days. Worst case is about 250 MiB per node; at the first measured rate
+(about 37 KB per minute) the size cap, not the 7 days, sets retention.
 
 ## Apply
 
@@ -44,11 +45,28 @@ policy's SHA-256 as a pod annotation, so the kubelet sees a new manifest.
 
 ## Verify
 
+Run a grant and revoke, then read with a real token for the identity (not
+`kubectl --as`: the policy is matched before impersonation, so impersonated
+reads are not recorded):
+
 ```bash
-# On a control plane: a grant is recorded with the requesting user.
-sudo grep -h '"rolebindings"' /var/log/kubernetes/audit/audit.log | tail -1 \
-  | python3 -c 'import json,sys; e=json.loads(sys.stdin.read()); print(e["user"]["username"], e["verb"], e["objectRef"]["namespace"], e["objectRef"]["name"])'
+scripts/grant-incident-access.sh --env lab grant app-team-a
+scripts/grant-incident-access.sh --env lab revoke app-team-a
+TOK=$(kubectl -n debug-system create token prod-debug-sa --duration=10m)
+KUBECONFIG=/dev/null kubectl --server=https://10.97.3.100:6443 \
+  --certificate-authority=$HOME/.local/share/kubernetes-in-finance/vault-kubernetes-ca.crt \
+  --token="$TOK" -n app-team-a get pods      # expect Forbidden
+unset TOK
 ```
+
+Then, on each control plane (each request lands on one of them):
+
+```bash
+sudo python3 -I k8s-audit-extract.py <start time, UTC>
+```
+
+`scripts/k8s-audit-extract.py` prints only who, what, where and the result:
+no bodies. First run: [2026-11-27 evidence](../security/evidence/2026-11-27-apiserver-audit.md).
 
 ## If an API server does not come back
 

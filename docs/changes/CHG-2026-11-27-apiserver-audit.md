@@ -12,8 +12,8 @@ Written with the production-debug Change template
 | Implemented by | Ansible `15-apiserver-audit.yml`, role `apiserver-audit` |
 | Risk | Moderate: each API server restarts once. A bad manifest or policy keeps that node's API server down. Mitigated by one node at a time with a stop on first failure, a backup of every manifest, a policy check against the real v1.36.6 binary, and a tested backout |
 | Change window | Operator present; not while any other control-plane work is in progress |
-| Pull request | Branch `feat/apiserver-audit-logging` |
-| Status | **Proposed. Not applied; needs operator approval** |
+| Pull request | #12 (merged `708c12b`) |
+| Status | **Implemented 2026-11-27 00:49–00:52 UTC** (approved by the operator in session); [evidence](../security/evidence/2026-11-27-apiserver-audit.md) |
 
 ## Justification
 
@@ -66,6 +66,7 @@ not ready within 5 minutes of its manifest change.
 
 | Question | Answer |
 |---|---|
-| Implemented as planned? | Pending |
-| Success check met? | Pending |
-| Unplanned impact? | Pending |
+| Implemented as planned? | Yes. All preconditions met; three nodes in turn, `failed=0`, one restart each |
+| Success check met? | Yes. Grant, revoke and the identity's allowed and denied reads are recorded; 0 sensitive bodies ([evidence](../security/evidence/2026-11-27-apiserver-audit.md)) |
+| Unplanned impact? | None. `tf-ha-control3`'s API server was down for 43 s (00:51:26–00:52:09) while the other two served; its mirror pod status lagged a few seconds behind |
+| Lesson | The policy is matched before impersonation: `kubectl --as` cannot test identity rules. Use a real short-lived token |
