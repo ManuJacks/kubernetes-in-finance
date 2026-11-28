@@ -11,8 +11,9 @@ procedures that do not depend on Kubernetes availability.
 - Initial snapshot: `~/vault-backups/kif-vault-initial.snap`.
 - Recovery material: KeePassXC under `KIF Infrastructure/Vault`.
 
-The snapshot currently resides on the same host as Vault. An independent
-encrypted backup and restore drill are still required.
+The initial snapshot resides on the same host as Vault. An independent,
+encrypted backup is kept on removable media and was restored successfully in
+the 2026-11-27 drill ([results](../runbooks/vault-restore-drill.md#results)).
 
 ## Rotation principles
 

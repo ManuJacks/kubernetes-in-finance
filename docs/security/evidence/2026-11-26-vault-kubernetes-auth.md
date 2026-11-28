@@ -72,4 +72,5 @@ production-debug-db-audit: in sync
 ## Not captured
 
 Vault audit-log entries: `/var/log/vault/` is not readable by the operator
-account. Still pending.
+account. Captured with sudo on 2026-11-27: see
+[2026-11-27 evidence](2026-11-27-vault-tokenreview-credential.md) §4.
