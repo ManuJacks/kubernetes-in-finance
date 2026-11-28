@@ -10,9 +10,14 @@ vault_tls_dir: /opt/vault/tls
 vault_config_dir: /etc/vault.d
 vault_apt_key_url: https://apt.releases.hashicorp.com/gpg
 vault_apt_keyring: /usr/share/keyrings/hashicorp-archive-keyring.gpg
+# The Ubuntu suite, not the distribution's own codename: this host is Linux
+# Mint "zena" on Ubuntu "noble", and HashiCorp publishes only Ubuntu suites.
+# (ansible_distribution_release is "zena" here; using it would write a
+# repository line apt cannot fetch. Found by --check on 2026-11-28.)
+vault_apt_suite: noble
 vault_apt_repo: >-
-  deb [arch=amd64 signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg]
-  https://apt.releases.hashicorp.com {{ ansible_distribution_release | default('noble') }} main
+  deb [arch=amd64 signed-by={{ vault_apt_keyring }}]
+  https://apt.releases.hashicorp.com {{ vault_apt_suite }} main
 # Directory on the host holding tls.crt and tls.key, restored from backup by
 # the operator. The key is never in this repository. Leave empty to keep the
 # files already in vault_tls_dir.
