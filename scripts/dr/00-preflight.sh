@@ -19,7 +19,10 @@
 DR_USB="${DR_USB:-/media/robert/2565c03e-a345-47ed-9401-8c5477842293}"
 DR_VAULT_LAST_CHANGE="${DR_VAULT_LAST_CHANGE:-2026-11-28T00:15:02Z}"
 DR_MAX_BACKUP_AGE_MIN="${DR_MAX_BACKUP_AGE_MIN:-60}"
-DR_KEY_FPR="838E3C42CE171DDB66B132113A4B349DEC36404A"
+# The DR backup key's fingerprint, read from the public key in the repository
+# (one source of truth; also keeps a 40-hex literal out of the code).
+DR_KEY_FPR="$(gpg --show-keys --with-colons "$KIF_REPO/ansible/files/dr-backup-recipient.asc" 2>/dev/null \
+    | awk -F: '$1 == "fpr" {print $10; exit}')"
 export VAULT_ADDR="${VAULT_ADDR:-https://vault.kif.io:8200}"
 export VAULT_CACERT="${VAULT_CACERT:-/usr/local/share/ca-certificates/kif-internal-root-ca.crt}"
 
