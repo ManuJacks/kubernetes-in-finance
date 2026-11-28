@@ -1,0 +1,7 @@
+# Known false positives, one per line: <commit>:<file>:<rule>:<line>.
+# Each entry must say why it is not a secret.
+#
+# The public fingerprint of the "KIF DR backup" gpg key (also in
+# ansible/inventory/group_vars/control_plane.yml). Removed from the script in
+# 323aab8; this entry covers only the commit that introduced it.
+83bad33db388e65ad6082d7072410c5404599669:scripts/dr/00-preflight.sh:generic-api-key:22
