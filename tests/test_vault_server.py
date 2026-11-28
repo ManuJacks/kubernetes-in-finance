@@ -54,3 +54,9 @@ def test_pki_backup_is_encrypted_to_an_offline_key():
 def test_template_has_no_extra_header():
     """A header would differ from the live file; the change would restart and seal Vault."""
     assert read(ROLE, "templates", "vault.hcl.j2").startswith("ui = true\n")
+
+
+def test_dr_recipient_is_a_public_key_only():
+    key = read(ROOT, "ansible", "files", "dr-backup-recipient.asc")
+    assert key.startswith("-----BEGIN PGP PUBLIC KEY BLOCK-----")
+    assert "PRIVATE" not in key
