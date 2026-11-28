@@ -19,8 +19,8 @@ E = [2026-11-26 evidence](evidence/2026-11-26-vault-kubernetes-auth.md)
 | Application secret path is allowed | Passed | E §1 HTTP `200` | 2026-11-26 |
 | Database secret path is denied | Passed | E §1 HTTP `403` | 2026-11-26 |
 | Deployed policies match `vault/policies/` | Passed | E §4 | 2026-11-26 |
-| Vault uses the long-lived TokenReview credential | Pending | CHG-2026-11-26, step 3 | |
-| Logins still work more than 24 h after configuration | Pending | Re-run smoke test after the CHG | |
+| Vault uses the long-lived TokenReview credential | Passed | [2026-11-27 evidence](evidence/2026-11-27-vault-tokenreview-credential.md) §1–3 | 2026-11-27 |
+| Logins still work more than 24 h after configuration | Pending | Re-run smoke test no earlier than 2026-11-29T00:15Z ([evidence](evidence/2026-11-27-vault-tokenreview-credential.md) §4) | |
 | Vault audit records auth and access | Pending | Audit log not readable by operator account | |
 | Encrypted backup on removable media | Passed | `kif-vault-20261127T054931Z.snap.gpg`, SHA-256 verified, gpg AES256 | 2026-11-27 |
 | Independent snapshot restore succeeds | Passed (run 2; run 1 failed on a drill defect) | [restore drill results](../runbooks/vault-restore-drill.md#results): 6/6 checks, 96 s incl. human steps | 2026-11-27 |

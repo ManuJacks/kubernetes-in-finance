@@ -40,9 +40,10 @@ wrote its config and the `prod-debug` role.
    the deployed ones.
 3. Evidence is captured; the ADR is numbered, located and updated.
 
-**Part 2, step 3 (manual, operator, pending).** Run the playbook, then
-rewrite `auth/kubernetes/config` with the Secret's JWT (runbook, "Rotate the
-TokenReview credential", steps 2–4).
+**Part 2, step 3 (manual, operator, done 2026-11-27).** Ran the playbook,
+then rewrote `auth/kubernetes/config` with the Secret's JWT (runbook, "Rotate
+the TokenReview credential", steps 2–4). Smoke test passed immediately
+([evidence](../security/evidence/2026-11-27-vault-tokenreview-credential.md)).
 
 ## Test plan and evidence
 
@@ -73,7 +74,7 @@ and that cannot be fixed within the change window.
 
 | Question | Answer |
 |---|---|
-| Implemented as planned? | Part 1 yes, but outside the change process (see above). Part 2 pending step 3 |
-| Success check met? | Part 1 yes (evidence). Part 2 pending the 24-hour re-run |
+| Implemented as planned? | Part 1 yes, but outside the change process (see above). Part 2 yes; step 3 done 2026-11-27 |
+| Success check met? | Part 1 yes (evidence). Part 2: immediate smoke test passed; 24-hour re-run due no earlier than 2026-11-29T00:15Z |
 | Unplanned impact? | None observed |
 | Lesson | Security-control-plane changes go through a PR like every other change; "manual Vault step" does not exempt the Kubernetes and docs side |
