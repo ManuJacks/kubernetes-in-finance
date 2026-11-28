@@ -140,6 +140,10 @@ severity, inhibit, or deletion) recorded in the review. Process:
 | `NodeCpuSaturatedCritical` | page | Control-plane starvation risk |
 | `NodeDiskSpaceFillingFast` | ticket | Headroom shrinking |
 | `NodeDiskSpaceCritical` | page | Disk exhaustion imminent; etcd and kubelet stop |
+| `VaultSealed` | page | Every workload login and secret read fails until a human unseals |
+| `VaultUnavailable` | page | Same impact as sealed; the cause differs |
+| `VaultProbeAbsent` | ticket | Monitoring gap, no impact yet |
+| `VaultCertificateExpiringSoon` | ticket | Two weeks to rotate; impact only at expiry |
 
 ## Consequences
 

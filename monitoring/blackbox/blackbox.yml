@@ -11,3 +11,16 @@ modules:
       preferred_ip_protocol: ip4
       tls_config:
         ca_file: /etc/blackbox/kubernetes-ca.crt
+
+  # Vault /v1/sys/health: only 200 (initialized, unsealed, active) passes.
+  # Sealed is 503, so probe_success drops and probe_http_status_code says why.
+  # Verified against the KIF Internal Root CA.
+  vault_health:
+    prober: http
+    timeout: 4s
+    http:
+      method: GET
+      valid_status_codes: [200]
+      preferred_ip_protocol: ip4
+      tls_config:
+        ca_file: /etc/blackbox/kif-internal-root-ca.crt

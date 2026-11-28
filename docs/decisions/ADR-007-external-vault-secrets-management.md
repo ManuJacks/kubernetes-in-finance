@@ -35,6 +35,20 @@ of high availability. Multi-node Vault is explicitly deferred until tested
 recovery, monitoring, independent backups, and service-availability needs
 justify the added operational complexity.
 
+**Status 2026-11-27.** The first three preconditions now hold: restore is
+drilled (96 s), an encrypted backup sits on removable media, and Vault is
+monitored (`monitoring/prometheus/rules/vault.yml`: `VaultSealed` and
+`VaultUnavailable` page). What remains is the failure domain itself. Vault
+runs on the same host as every cluster VM, so a second and third Raft node on
+that host would add complexity without surviving the failure that matters
+(the host). On 2026-11-27 the host booted twice (13:46:59 and 15:07:39
+EST, from `journalctl --list-boots`). After the second boot Vault started at
+15:07:49 sealed and stayed sealed for about 4 hours, unnoticed, until the
+operator unsealed it at about 19:12. That gap is now closed by detection
+(`VaultSealed` pages after 1 minute), not by redundancy.
+Revisit when a second physical machine (or a cloud KMS for auto-unseal) is
+available.
+
 ### Trust and TLS
 
 Vault uses the KIF Internal CA, with hostname `vault.kif.io` and listener
@@ -134,7 +148,9 @@ cross-boundary denial proven (200 / 403).
 
 1. Switch the Vault config to the long-lived TokenReview credential
    (manual step, [CHG-2026-11-26](../changes/CHG-2026-11-26-vault-kubernetes-auth.md)).
+   Done 2026-11-27; the 24-hour login re-run is still due.
 2. Capture Vault audit-log evidence for auth and read events.
+   Done 2026-11-27 ([evidence](../security/evidence/2026-11-27-vault-tokenreview-credential.md) §4).
 3. Integrate the production-debug workload (today only the smoke test uses
    `prod-debug-sa` against Vault).
 4. Create an independent encrypted backup and demonstrate restore, with a
@@ -144,6 +160,10 @@ cross-boundary denial proven (200 / 403).
    disk, restore into an isolated instance 6/6 checks in 96 s (run 1 failed
    on a check defect). Host rebuild remains open (item 8).
 5. Add Vault monitoring and alerting under ADR-006.
+   Done 2026-11-27: blackbox probe of `/v1/sys/health`, alerts `VaultSealed`,
+   `VaultUnavailable` (page), `VaultProbeAbsent`,
+   `VaultCertificateExpiringSoon` (ticket). Not covered: Prometheus itself
+   failing (needs the external dead man's switch, ADR-006).
 6. Implement audit log rotation and protection.
 7. Set an `audience` on the `prod-debug` role (Vault warns that none is
    configured; it narrows which JWTs the role accepts).

@@ -48,6 +48,13 @@
     mode: "0644"
   notify: Restart monitoring stack
 
+- name: Install the KIF Internal Root CA for the Vault health probe
+  ansible.builtin.copy:
+    src: "{{ monitoring_vault_ca_file }}"
+    dest: "{{ monitoring_home }}/config/blackbox/kif-internal-root-ca.crt"
+    mode: "0644"
+  notify: Restart monitoring stack
+
 - name: Install cluster credentials for Prometheus kubelet and cadvisor metrics scraping
   ansible.builtin.copy:
     content: "{{ item.content }}"
