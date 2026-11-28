@@ -1,0 +1,84 @@
+---
+# Vault always starts sealed. Unsealing (3 of 5 shares) and restoring data
+# (vault operator raft snapshot restore) are operator steps, by design.
+
+- name: Add the HashiCorp apt signing key
+  ansible.builtin.get_url:
+    url: "{{ vault_apt_key_url }}"
+    dest: /usr/share/keyrings/hashicorp-archive-key.asc
+    mode: "0644"
+  register: vault_apt_key
+
+- name: Dearmor the HashiCorp signing key into the keyring
+  ansible.builtin.command:
+    cmd: gpg --batch --yes --dearmor -o {{ vault_apt_keyring }} /usr/share/keyrings/hashicorp-archive-key.asc
+    creates: "{{ vault_apt_keyring }}"
+
+- name: Add the HashiCorp apt repository
+  ansible.builtin.apt_repository:
+    repo: "{{ vault_apt_repo }}"
+    filename: hashicorp
+    state: present
+
+- name: Install the pinned Vault package
+  ansible.builtin.apt:
+    name: "vault={{ vault_version }}"
+    state: present
+    update_cache: true
+
+- name: Hold the Vault package at the pinned version
+  ansible.builtin.dpkg_selections:
+    name: vault
+    selection: hold
+
+- name: Resolve vault.kif.io to the host listener
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    regexp: '\s{{ vault_hostname | regex_escape }}$'
+    line: "{{ vault_listen_ip }} {{ vault_hostname }}"
+
+- name: Ensure Vault directories exist with the expected ownership
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: vault
+    group: vault
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: /opt/vault, mode: "0755" }
+    - { path: "{{ vault_data_dir }}", mode: "0700" }
+    - { path: "{{ vault_tls_dir }}", mode: "0700" }
+
+- name: Install the TLS certificate and key restored by the operator
+  ansible.builtin.copy:
+    src: "{{ vault_tls_source_dir }}/{{ item }}"
+    dest: "{{ vault_tls_dir }}/{{ item }}"
+    remote_src: true
+    owner: vault
+    group: vault
+    mode: "0600"
+  loop: [tls.crt, tls.key]
+  when: vault_tls_source_dir | length > 0
+  notify: Restart vault
+
+- name: Require the TLS certificate and key to be present
+  ansible.builtin.stat:
+    path: "{{ vault_tls_dir }}/{{ item }}"
+  loop: [tls.crt, tls.key]
+  register: vault_tls_files
+  failed_when: not vault_tls_files.stat.exists
+
+- name: Write the Vault configuration
+  ansible.builtin.template:
+    src: vault.hcl.j2
+    dest: "{{ vault_config_dir }}/vault.hcl"
+    owner: vault
+    group: vault
+    mode: "0644"
+  notify: Restart vault
+
+- name: Enable and start Vault (it starts sealed)
+  ansible.builtin.systemd:
+    name: vault
+    enabled: true
+    state: started

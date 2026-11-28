@@ -1,0 +1,26 @@
+ui = true
+
+# Integrated storage: single-node KIF deployment
+storage "raft" {
+  path    = "{{ vault_data_dir }}"
+  node_id = "{{ vault_node_id }}"
+}
+
+# Vault API endpoint
+api_addr = "https://{{ vault_hostname }}:8200"
+
+# Raft cluster communication endpoint
+cluster_addr = "https://{{ vault_listen_ip }}:8201"
+
+# Integrated storage uses memory-mapped files.
+# Keep host swap enabled; do not mlock Vault's memory.
+disable_mlock = true
+
+listener "tcp" {
+  address         = "{{ vault_listen_ip }}:8200"
+  cluster_address = "{{ vault_listen_ip }}:8201"
+
+  tls_cert_file   = "{{ vault_tls_dir }}/tls.crt"
+  tls_key_file    = "{{ vault_tls_dir }}/tls.key"
+  tls_min_version = "tls12"
+}

@@ -169,6 +169,11 @@ cross-boundary denial proven (200 / 403).
    configured; it narrows which JWTs the role accepts).
 8. Make the Vault host rebuildable: `vault.hcl`, TLS material and the
    systemd unit are outside the snapshot and outside this repository.
+   Partly done 2026-11-27: role `vault-server` (`16-vault-server.yml`)
+   rebuilds the package, configuration and directories; the unit is the
+   package default. TLS material stays out of the repository. Since
+   2026-11-28 it is backed up, with the KIF CA, as an encrypted archive on
+   the USB disk ([DR plan](../dr/DR-PLAN-full-platform.md), T6).
 
 ## Principles
 

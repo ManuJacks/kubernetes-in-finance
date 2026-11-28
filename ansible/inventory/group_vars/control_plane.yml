@@ -3,3 +3,7 @@
 etcd_backup_use_nfs: true
 etcd_backup_nfs_server: "10.97.0.1"
 etcd_backup_nfs_export: "/srv/k8s-etcd-backups"
+# Encrypt the cluster PKI beside every snapshot (DR plan gap T1) to the
+# "KIF DR backup" key, fingerprint 838E3C42CE171DDB66B132113A4B349DEC36404A.
+# Public key only; the private key is held offline by the operator.
+etcd_backup_pki_recipient_key: "{{ inventory_dir }}/../files/dr-backup-recipient.asc"
