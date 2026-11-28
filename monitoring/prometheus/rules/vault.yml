@@ -1,0 +1,44 @@
+---
+# Vault, the secrets control plane (ADR-007). It is a single node with
+# Shamir unseal: any restart leaves it sealed until an operator enters 3 of 5
+# key shares, and every workload login fails until then. These alerts make
+# that visible within minutes. Probe: blackbox module vault_health against
+# /v1/sys/health (200 active and unsealed, 503 sealed).
+groups:
+  - name: vault
+    rules:
+      - alert: VaultSealed
+        expr: probe_http_status_code{job="vault"} == 503
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: Vault is sealed; Kubernetes logins and secret reads fail until it is unsealed (3 of 5 shares).
+          runbook: docs/security/VAULT_RECOVERY_AND_ROTATION.md
+
+      - alert: VaultUnavailable
+        expr: probe_success{job="vault"} == 0 unless probe_http_status_code{job="vault"} == 503
+        for: 2m
+        labels:
+          severity: page
+        annotations:
+          summary: Vault health check failing (not sealed); service down, TLS broken, or unreachable.
+          runbook: docs/security/VAULT_RECOVERY_AND_ROTATION.md
+
+      - alert: VaultProbeAbsent
+        expr: absent(probe_success{job="vault"})
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: No Vault health probe results; Vault is not being monitored.
+          runbook: docs/monitoring/README.md
+
+      - alert: VaultCertificateExpiringSoon
+        expr: (probe_ssl_earliest_cert_expiry{job="vault"} - time()) < 14 * 86400
+        for: 1h
+        labels:
+          severity: ticket
+        annotations:
+          summary: Vault's TLS certificate chain expires in under 14 days.
+          runbook: docs/security/VAULT_RECOVERY_AND_ROTATION.md

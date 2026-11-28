@@ -4,6 +4,8 @@
 # portable; see docs/monitoring/README.md for the in-cluster migration path.
 monitoring_home: "{{ ansible_env.HOME }}/.local/share/kubernetes-in-finance/monitoring"
 monitoring_repo_dir: "{{ playbook_dir }}/../../monitoring"
+# CA that signs vault.kif.io (docs/security/VAULT_KUBERNETES_AUTH.md).
+monitoring_vault_ca_file: /usr/local/share/ca-certificates/kif-internal-root-ca.crt
 monitoring_kubeconfig: "{{ ansible_env.HOME }}/.kube/kubernetes-in-finance.conf"
 monitoring_backup_dir: /srv/k8s-etcd-backups
 monitoring_retention_time: 35d

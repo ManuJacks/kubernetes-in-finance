@@ -6,6 +6,7 @@ rule_files:
   - ../rules/drills.yml
   - ../rules/alerting-pipeline.yml
   - ../rules/kubernetes-workloads.yml
+  - ../rules/vault.yml
 
 evaluation_interval: 30s
 
@@ -706,3 +707,87 @@ tests:
             exp_annotations:
               summary: "Node w2 memory usage is above 85%."
               runbook: docs/monitoring/README.md
+
+  # Vault sealed after a restart: pages within 2 minutes, and is not also
+  # reported as "unavailable".
+  - interval: 15s
+    input_series:
+      - series: 'probe_success{job="vault", instance="vault"}'
+        values: '1x20 0x20'
+      - series: 'probe_http_status_code{job="vault", instance="vault"}'
+        values: '200x20 503x20'
+    alert_rule_test:
+      - eval_time: 7m
+        alertname: VaultSealed
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              job: vault
+              instance: vault
+            exp_annotations:
+              summary: Vault is sealed; Kubernetes logins and secret reads fail until it is unsealed (3 of 5 shares).
+              runbook: docs/security/VAULT_RECOVERY_AND_ROTATION.md
+      - eval_time: 7m
+        alertname: VaultUnavailable
+        exp_alerts: []
+      - eval_time: 4m
+        alertname: VaultSealed
+        exp_alerts: []
+
+  # Vault down (connection refused: status code 0) pages as unavailable.
+  - interval: 15s
+    input_series:
+      - series: 'probe_success{job="vault", instance="vault"}'
+        values: '1x20 0x20'
+      - series: 'probe_http_status_code{job="vault", instance="vault"}'
+        values: '200x20 0x20'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: VaultUnavailable
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              job: vault
+              instance: vault
+            exp_annotations:
+              summary: Vault health check failing (not sealed); service down, TLS broken, or unreachable.
+              runbook: docs/security/VAULT_RECOVERY_AND_ROTATION.md
+      - eval_time: 8m
+        alertname: VaultSealed
+        exp_alerts: []
+
+  # No probe at all.
+  - interval: 1m
+    input_series:
+      - series: 'probe_success{job="api-vip", instance="vip"}'
+        values: '1x10'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: VaultProbeAbsent
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              job: vault
+            exp_annotations:
+              summary: No Vault health probe results; Vault is not being monitored.
+              runbook: docs/monitoring/README.md
+
+  # Certificate inside 14 days for over an hour (time() starts at 0 here).
+  - interval: 1m
+    input_series:
+      - series: 'probe_ssl_earliest_cert_expiry{job="vault", instance="vault"}'
+        values: '864000x120'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: VaultCertificateExpiringSoon
+        exp_alerts: []
+      - eval_time: 90m
+        alertname: VaultCertificateExpiringSoon
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              job: vault
+              instance: vault
+            exp_annotations:
+              summary: Vault's TLS certificate chain expires in under 14 days.
+              runbook: docs/security/VAULT_RECOVERY_AND_ROTATION.md

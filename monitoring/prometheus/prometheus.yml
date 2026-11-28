@@ -64,6 +64,17 @@ scrape_configs:
           - https://10.97.2.213:6443/readyz
     relabel_configs: *blackbox_relabel
 
+  # Vault health (ADR-007): sealed or down is a page (rules/vault.yml).
+  - job_name: vault
+    scrape_interval: 15s
+    scrape_timeout: 5s
+    metrics_path: /probe
+    params:
+      module: [vault_health]
+    static_configs:
+      - targets: ["https://vault.kif.io:8200/v1/sys/health"]
+    relabel_configs: *blackbox_relabel
+
   - job_name: blackbox
     static_configs:
       - targets: ["127.0.0.1:9115"]
