@@ -1,0 +1,34 @@
+---
+# Enable (or, with -e apiserver_audit_state=absent, remove) Kubernetes API
+# audit logging on the control planes. CHG-2026-11-27-apiserver-audit.
+#
+# One node at a time: each API server restarts while the other two keep
+# serving through the load balancer. Stops at the first failure.
+#
+#   ANSIBLE_CONFIG=ansible/ansible.cfg ansible-playbook \
+#     -i ansible/inventory/hosts.yml ansible/playbooks/15-apiserver-audit.yml
+#
+# If an API server does not come back: docs/runbooks/apiserver-audit.md.
+
+- name: Require every API server to be ready before starting
+  hosts: control_plane
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Check the local API server
+      ansible.builtin.uri:
+        url: "https://127.0.0.1:6443/readyz"
+        validate_certs: false
+        status_code: 200
+      check_mode: false
+
+- name: Apply API audit logging, one control plane at a time
+  hosts: control_plane
+  become: true
+  gather_facts: false
+  serial: 1
+  any_errors_fatal: true
+  max_fail_percentage: 0
+  roles:
+    - apiserver-audit

@@ -1,0 +1,11 @@
+---
+apiserver_audit_state: present          # present | absent (backout)
+apiserver_audit_policy_dir: /etc/kubernetes/audit
+apiserver_audit_log_dir: /var/log/kubernetes/audit
+apiserver_audit_manifest: /etc/kubernetes/manifests/kube-apiserver.yaml
+# Must be outside /etc/kubernetes/manifests: the kubelet runs every file there.
+apiserver_audit_backup_dir: /var/backups/kube-apiserver
+apiserver_audit_log_maxage: 7           # days
+apiserver_audit_log_maxbackup: 4        # files
+apiserver_audit_log_maxsize: 50         # MiB per file; worst case ~250 MiB per node
+apiserver_audit_ready_retries: 60       # x 5 s

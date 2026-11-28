@@ -1,0 +1,57 @@
+---
+# Kubernetes API audit policy (CHG-2026-11-27). The first matching rule wins.
+# Goal: record who changed access and what the diagnostic identity read,
+# without recording Secret or token contents.
+apiVersion: audit.k8s.io/v1
+kind: Policy
+omitStages:
+  - RequestReceived
+rules:
+  # Noise: health checks, discovery, events and leader-election leases.
+  - level: None
+    nonResourceURLs: ["/healthz*", "/livez*", "/readyz*", "/version", "/metrics", "/openapi/*", "/api", "/apis", "/api/*", "/apis/*"]
+  - level: None
+    resources:
+      - group: ""
+        resources: ["events"]
+      - group: "events.k8s.io"
+        resources: ["events"]
+      - group: "coordination.k8s.io"
+        resources: ["leases"]
+
+  # Sensitive objects: metadata only, never bodies. Comes before every rule
+  # that records bodies. TokenReviews include those Vault makes for logins.
+  - level: Metadata
+    resources:
+      - group: ""
+        resources: ["secrets", "configmaps", "serviceaccounts/token"]
+      - group: "authentication.k8s.io"
+        resources: ["tokenreviews"]
+      - group: "authorization.k8s.io"
+        resources: ["subjectaccessreviews", "selfsubjectaccessreviews"]
+
+  # Access-model changes: grants, revokes, and the admission guard itself.
+  - level: RequestResponse
+    verbs: ["create", "update", "patch", "delete", "deletecollection"]
+    resources:
+      - group: "rbac.authorization.k8s.io"
+      - group: "admissionregistration.k8s.io"
+        resources: ["validatingadmissionpolicies", "validatingadmissionpolicybindings"]
+
+  # Platform approval label (production-debug/diagnosable) lives on Namespaces.
+  - level: Request
+    verbs: ["create", "update", "patch", "delete"]
+    resources:
+      - group: ""
+        resources: ["namespaces"]
+
+  # The diagnostic identity: every request, including reads and denials.
+  - level: Metadata
+    users: ["system:serviceaccount:debug-system:prod-debug-sa"]
+
+  # Any other write, by anyone.
+  - level: Metadata
+    verbs: ["create", "update", "patch", "delete", "deletecollection"]
+
+  # Everything else (routine reads by controllers and nodes): not recorded.
+  - level: None

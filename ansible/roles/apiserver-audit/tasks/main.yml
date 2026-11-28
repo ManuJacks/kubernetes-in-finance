@@ -1,0 +1,106 @@
+---
+# Runs on one control-plane node at a time (the playbook sets serial: 1).
+
+- name: Require a healthy local API server before changing it
+  ansible.builtin.uri:
+    url: "https://127.0.0.1:6443/readyz"
+    validate_certs: false
+    status_code: 200
+  register: apiserver_audit_before
+  retries: 6
+  delay: 5
+  until: apiserver_audit_before.status == 200
+  check_mode: false
+
+- name: Ensure the audit policy and log directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  loop:
+    - "{{ apiserver_audit_policy_dir }}"
+    - "{{ apiserver_audit_log_dir }}"
+    - "{{ apiserver_audit_backup_dir }}"
+
+- name: Install the audit policy
+  ansible.builtin.copy:
+    src: audit-policy.yaml
+    dest: "{{ apiserver_audit_policy_dir }}/policy.yaml"
+    owner: root
+    group: root
+    mode: "0600"
+  when: apiserver_audit_state == 'present'
+
+- name: Read the policy checksum
+  ansible.builtin.stat:
+    path: "{{ apiserver_audit_policy_dir }}/policy.yaml"
+    checksum_algorithm: sha256
+  register: apiserver_audit_policy
+
+- name: Back up the current API server manifest (outside the manifests directory)
+  ansible.builtin.copy:
+    src: "{{ apiserver_audit_manifest }}"
+    dest: "{{ apiserver_audit_backup_dir }}/kube-apiserver.yaml.{{ now(utc=true, fmt='%Y%m%dT%H%M%SZ') }}"
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0600"
+  changed_when: false
+  # In check mode the backup directory was not really created.
+  ignore_errors: "{{ ansible_check_mode }}"
+
+- name: Add or remove the audit flags and volumes
+  ansible.builtin.script:
+    cmd: >-
+      kube-apiserver-audit.py
+      {{ apiserver_audit_manifest | quote }}
+      {{ apiserver_audit_state | quote }}
+      {{ apiserver_audit_policy_dir | quote }}
+      {{ apiserver_audit_log_dir | quote }}
+      {{ apiserver_audit_policy.stat.checksum | default('none') | quote }}
+      {{ apiserver_audit_log_maxage | quote }}
+      {{ apiserver_audit_log_maxbackup | quote }}
+      {{ apiserver_audit_log_maxsize | quote }}
+    executable: /usr/bin/python3
+  register: apiserver_audit_patch
+  changed_when: "'changed' in apiserver_audit_patch.stdout"
+
+- name: Wait for the kubelet to restart the API server with the expected audit flags
+  ansible.builtin.shell: |
+    set -o pipefail
+    pid="$(pgrep -xo kube-apiserver)"
+    tr '\0' '\n' < "/proc/${pid}/cmdline" | grep -c '^--audit-policy-file=' || true
+  args:
+    executable: /bin/bash
+  register: apiserver_audit_running
+  changed_when: false
+  retries: 24
+  delay: 5
+  until: >-
+    (apiserver_audit_running.stdout | int) ==
+    (1 if apiserver_audit_state == 'present' else 0)
+  when: not ansible_check_mode
+
+- name: Wait for the new API server to be ready
+  ansible.builtin.uri:
+    url: "https://127.0.0.1:6443/readyz"
+    validate_certs: false
+    status_code: 200
+  register: apiserver_audit_after
+  retries: "{{ apiserver_audit_ready_retries }}"
+  delay: 5
+  until: apiserver_audit_after.status == 200
+  when: not ansible_check_mode
+
+- name: Confirm the audit log is being written
+  ansible.builtin.stat:
+    path: "{{ apiserver_audit_log_dir }}/audit.log"
+  register: apiserver_audit_log
+  retries: 12
+  delay: 5
+  until: apiserver_audit_log.stat.exists and apiserver_audit_log.stat.size > 0
+  when:
+    - apiserver_audit_state == 'present'
+    - not ansible_check_mode
