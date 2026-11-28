@@ -242,3 +242,71 @@ ETCDCTL_API=3 etcdctl --cacert=/etc/kubernetes/pki/etcd/ca.crt \
   --key=/etc/kubernetes/pki/etcd/server.key \
   --endpoints=https://127.0.0.1:2379 endpoint health
 ```
+
+## 7. Full rebuild: all control planes lost
+
+Section 6 restores one member in place. When **every** control plane is gone
+(DR plan, [docs/dr/DR-PLAN-full-platform.md](../dr/DR-PLAN-full-platform.md)),
+a snapshot seeds a **new single-member** cluster on the first rebuilt node,
+and the other members join it fresh. Nothing is restored on them.
+
+Why this works without breaking every client: the cluster PKI is restored
+too (encrypted beside every snapshot since 2026-11-28, DR plan T1). With the
+same CA and service-account signing key, every existing kubeconfig,
+ServiceAccount token and the Vault TokenReview credential stay valid.
+
+### Inputs
+
+| Input | From |
+|---|---|
+| etcd snapshot | NFS export `10.97.0.1:/srv/k8s-etcd-backups`, newest `etcd-snapshot-*.db` (or a chosen one) |
+| Cluster PKI | Same export, `cluster-pki-<node>-<time>.tar.gpg`, decrypted by the operator on the host |
+| Expected CA fingerprint | Before-state capture (`scripts/dr/10-capture-before.sh`), `cluster_ca_pubkey_sha256` |
+
+### Steps
+
+1. Rebuild the VMs and re-address the repository (`scripts/readdress.py --apply`),
+   then `01-common.yml`, `02-load-balancers.yml`, `09-host-networking.yml`,
+   `11-time-sync.yml`.
+2. Decrypt the PKI archive into memory on the host (the private key never
+   reaches the nodes):
+
+   ```bash
+   install -d -m 700 /dev/shm/kif-dr
+   sudo cat /srv/k8s-etcd-backups/cluster-pki-tf-ha-control1-<time>.tar.gpg \
+     | gpg --decrypt > /dev/shm/kif-dr/cluster-pki.tar
+   ```
+
+3. Restore the first control plane:
+
+   ```bash
+   ANSIBLE_CONFIG=ansible/ansible.cfg ansible-playbook -i ansible/inventory/hosts.yml \
+     ansible/playbooks/17-restore-control-plane.yml \
+     -e dr_pki_tarball=/dev/shm/kif-dr/cluster-pki.tar \
+     -e dr_expected_ca_pubkey_sha256=<from the before-state>
+   shred -u /dev/shm/kif-dr/cluster-pki.tar
+   ```
+
+   The playbook refuses a node that already has a cluster, checks the restored
+   CA against the expected fingerprint **before** touching etcd, restores with
+   `etcdutl snapshot restore --name tf-ha-control1
+   --initial-cluster tf-ha-control1=https://<ip>:2380
+   --initial-advertise-peer-urls https://<ip>:2380`, runs `kubeadm init
+   --ignore-preflight-errors=DirAvailable--var-lib-etcd`, and deletes the stale
+   Node objects of the machines that will rejoin (they come back from the
+   snapshot as Ready, and `kubeadm join` refuses an existing Ready name).
+4. Join the others: `07-join-control-planes.yml`, then `08-join-workers.yml`.
+5. Re-apply what kubeadm does not keep: `15-apiserver-audit.yml`,
+   `10-etcd-backup.yml`.
+
+### Verified without a rebuild (2026-11-28)
+
+- The guard: run in check mode against the live `tf-ha-control1`, the
+  playbook stopped at "Refuse to restore over an existing cluster" with
+  nothing changed.
+- The restore flags: the exact `etcdutl snapshot restore` command (etcdutl
+  3.7.0) on the newest real snapshot (574 keys, 11 MB, revision 1,940,650)
+  into a temporary directory produced `member/snap` and `member/wal`; the live
+  data directory was not touched.
+- Not yet verified: `kubeadm init` on top of restored data, and the joins.
+  That is the first thing the DR exercise proves.

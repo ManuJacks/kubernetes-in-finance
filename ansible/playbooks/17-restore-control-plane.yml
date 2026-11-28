@@ -1,0 +1,240 @@
+---
+# Restore the FIRST control plane of a rebuilt cluster from backup
+# (DR plan phase 3; docs/runbooks/etcd-backup-restore.md, "Full rebuild").
+#
+# Runs only on a freshly provisioned tf-ha-control1 (after 01-common.yml):
+#   1. refuses if the node already has a cluster (admin.conf or etcd data);
+#   2. installs the cluster PKI from the operator-decrypted archive, so the
+#      cluster keeps its identity (tokens, kubeconfigs, Vault auth stay valid);
+#   3. restores the chosen etcd snapshot as a new single-member cluster;
+#   4. runs kubeadm init on top of both, then removes the stale Node objects
+#      of the machines that will rejoin.
+# The other control planes and the workers then join normally (07, 08).
+#
+#   ANSIBLE_CONFIG=ansible/ansible.cfg ansible-playbook \
+#     -i ansible/inventory/hosts.yml ansible/playbooks/17-restore-control-plane.yml \
+#     -e dr_pki_tarball=/dev/shm/kif-dr/cluster-pki.tar \
+#     -e dr_expected_ca_pubkey_sha256=<from the before-state capture>
+#
+# The PKI archive is decrypted by the operator on the host (it is encrypted
+# to the KIF DR backup key, whose private half never reaches the nodes).
+- name: Restore the first control plane from the etcd snapshot and cluster PKI
+  hosts: tf-ha-control1
+  become: true
+  gather_facts: false
+  vars:
+    dr_nfs_export: "10.97.0.1:/srv/k8s-etcd-backups"
+    dr_mount: /mnt/kif-dr-backups
+    dr_snapshot: ""                     # file name on the export; empty = newest
+    dr_expected_ca_pubkey_sha256: ""    # required: the cluster CA must match
+    dr_restore_snapshot: /root/dr-restore.db
+    dr_rejoining_nodes: "{{ (groups['control_plane'] + groups['workers']) | difference([inventory_hostname]) }}"
+    etcd_peer_url: "https://{{ ansible_host }}:2380"
+
+  tasks:
+    - name: Require the operator inputs
+      ansible.builtin.assert:
+        that:
+          - dr_pki_tarball is defined and dr_pki_tarball | length > 0
+          - dr_expected_ca_pubkey_sha256 | length == 64
+        fail_msg: >-
+          Pass -e dr_pki_tarball=<decrypted cluster-pki tar on the controller> and
+          -e dr_expected_ca_pubkey_sha256=<cluster CA public-key SHA-256 from the before-state>.
+
+    - name: Look for an existing cluster on this node
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop: [/etc/kubernetes/admin.conf, /var/lib/etcd/member]
+      register: dr_existing
+
+    - name: Refuse to restore over an existing cluster
+      ansible.builtin.assert:
+        that: dr_existing.results | selectattr('stat.exists') | list | length == 0
+        fail_msg: >-
+          {{ inventory_hostname }} already has a cluster (admin.conf or etcd data).
+          This playbook only runs on a freshly provisioned node. Nothing was changed.
+
+    - name: Install the NFS client
+      ansible.builtin.package:
+        name: nfs-common
+        state: present
+
+    - name: Mount the backup export read-only
+      ansible.posix.mount:
+        path: "{{ dr_mount }}"
+        src: "{{ dr_nfs_export }}"
+        fstype: nfs
+        opts: ro
+        state: ephemeral
+
+    - name: Find the newest etcd snapshot
+      ansible.builtin.shell: |
+        set -o pipefail
+        find {{ dr_mount }} -maxdepth 1 -type f -name 'etcd-snapshot-*.db' -printf '%T@ %f\n' \
+          | sort -nr | head -1 | cut -d' ' -f2-
+      args:
+        executable: /bin/bash
+      register: dr_newest
+      changed_when: false
+      when: dr_snapshot | length == 0
+
+    - name: Choose the snapshot
+      ansible.builtin.set_fact:
+        dr_snapshot_file: "{{ dr_snapshot if dr_snapshot | length > 0 else dr_newest.stdout }}"
+
+    - name: Require a snapshot
+      ansible.builtin.assert:
+        that: dr_snapshot_file | length > 0
+        fail_msg: "No etcd snapshot found on {{ dr_nfs_export }}."
+
+    - name: Copy the snapshot off the export
+      ansible.builtin.copy:
+        src: "{{ dr_mount }}/{{ dr_snapshot_file }}"
+        dest: "{{ dr_restore_snapshot }}"
+        remote_src: true
+        owner: root
+        group: root
+        mode: "0600"
+
+    - name: Unmount the backup export
+      ansible.posix.mount:
+        path: "{{ dr_mount }}"
+        state: unmounted
+
+    - name: Verify the snapshot
+      ansible.builtin.command:
+        argv: [/usr/local/bin/etcdutl, snapshot, status, "{{ dr_restore_snapshot }}", --write-out=table]
+      register: dr_snapshot_status
+      changed_when: false
+
+    - name: Show the snapshot being restored
+      ansible.builtin.debug:
+        msg: "{{ [dr_snapshot_file] + dr_snapshot_status.stdout_lines }}"
+
+    - name: Create the PKI directory
+      ansible.builtin.file:
+        path: /etc/kubernetes/pki/etcd
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Copy the decrypted PKI archive to the node
+      ansible.builtin.copy:
+        src: "{{ dr_pki_tarball }}"
+        dest: /root/dr-pki.tar
+        owner: root
+        group: root
+        mode: "0600"
+
+    - name: Install the cluster PKI
+      ansible.builtin.unarchive:
+        src: /root/dr-pki.tar
+        dest: /etc/kubernetes/pki
+        remote_src: true
+        owner: root
+        group: root
+
+    - name: Remove the PKI archive from the node
+      ansible.builtin.file:
+        path: /root/dr-pki.tar
+        state: absent
+
+    - name: Keep private keys readable by root only
+      ansible.builtin.shell: |
+        set -o pipefail
+        find /etc/kubernetes/pki -name '*.key' -exec chmod 0600 {} +
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Fingerprint the restored cluster CA
+      ansible.builtin.shell: |
+        set -o pipefail
+        openssl x509 -in /etc/kubernetes/pki/ca.crt -noout -pubkey \
+          | openssl pkey -pubin -outform DER | sha256sum | cut -d' ' -f1
+      args:
+        executable: /bin/bash
+      register: dr_ca_fingerprint
+      changed_when: false
+
+    - name: Require the restored CA to be the cluster's own
+      ansible.builtin.assert:
+        that: dr_ca_fingerprint.stdout == dr_expected_ca_pubkey_sha256
+        fail_msg: >-
+          The restored CA ({{ dr_ca_fingerprint.stdout }}) is not the cluster CA recorded
+          before the DR ({{ dr_expected_ca_pubkey_sha256 }}). Wrong archive? Stopping
+          before etcd is touched.
+
+    - name: Restore etcd as a new single-member cluster
+      ansible.builtin.command:
+        argv:
+          - /usr/local/bin/etcdutl
+          - snapshot
+          - restore
+          - "{{ dr_restore_snapshot }}"
+          - --data-dir=/var/lib/etcd
+          - "--name={{ inventory_hostname }}"
+          - "--initial-cluster={{ inventory_hostname }}={{ etcd_peer_url }}"
+          - "--initial-advertise-peer-urls={{ etcd_peer_url }}"
+        creates: /var/lib/etcd/member
+
+    - name: Restrict the etcd data directory
+      ansible.builtin.file:
+        path: /var/lib/etcd
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+
+    - name: Remove the snapshot copy
+      ansible.builtin.file:
+        path: "{{ dr_restore_snapshot }}"
+        state: absent
+
+    - name: Render the kubeadm configuration
+      ansible.builtin.template:
+        src: ../roles/kubernetes-bootstrap/templates/kubeadm-init.yaml.j2
+        dest: /etc/kubernetes/kubeadm-init.yaml
+        owner: root
+        group: root
+        mode: "0600"
+
+    - name: Initialize the control plane on the restored PKI and etcd data
+      ansible.builtin.command:
+        argv:
+          - kubeadm
+          - init
+          - --config=/etc/kubernetes/kubeadm-init.yaml
+          # The etcd data directory is the restored snapshot, on purpose.
+          - --ignore-preflight-errors=DirAvailable--var-lib-etcd
+        creates: /etc/kubernetes/admin.conf
+
+    - name: Wait for the API server
+      ansible.builtin.command:
+        argv: [kubectl, --kubeconfig=/etc/kubernetes/admin.conf, get, --raw=/readyz]
+      register: dr_readyz
+      retries: 60
+      delay: 5
+      until: dr_readyz.rc == 0
+      changed_when: false
+
+    - name: Remove the stale Node objects of the machines that will rejoin
+      # Restored from the snapshot as "Ready"; kubeadm join refuses a name that
+      # is already a Ready Node. Their pods are recreated by their controllers.
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - --kubeconfig=/etc/kubernetes/admin.conf
+          - delete
+          - node
+          - --ignore-not-found
+          - "{{ item }}"
+      loop: "{{ dr_rejoining_nodes }}"
+      changed_when: true
+
+    - name: Report
+      ansible.builtin.debug:
+        msg: >-
+          {{ inventory_hostname }} restored from {{ dr_snapshot_file }} with the cluster CA
+          {{ dr_ca_fingerprint.stdout[:16] }}... Next: 07-join-control-planes.yml, 08-join-workers.yml.

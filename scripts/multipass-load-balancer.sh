@@ -40,10 +40,26 @@ if (( LAST_OCTET < 1 || LAST_OCTET > 254 )); then
   exit 1
 fi
 
+# 10.97.3.11 and .12 belong to the two recorded load balancers. A new load
+# balancer may not take them, but rebuilding a recorded one after it was lost
+# (DR plan T15) must: LB_REBUILD=1 allows exactly the recorded address for
+# that name, nothing else.
 case "$FRONTEND_IP" in
-  10.97.3.11|10.97.3.12|"$VIP")
-    echo "ERROR: Frontend IP $FRONTEND_IP is reserved." >&2
+  "$VIP")
+    echo "ERROR: Frontend IP $FRONTEND_IP is the API VIP." >&2
     exit 1
+    ;;
+  10.97.3.11|10.97.3.12)
+    case "${LB_REBUILD:-0}:$NAME:$FRONTEND_IP" in
+      1:api-lb1-new:10.97.3.11|1:api-lb2-new:10.97.3.12)
+        echo "Rebuilding recorded load balancer $NAME with its recorded address $FRONTEND_IP"
+        ;;
+      *)
+        echo "ERROR: Frontend IP $FRONTEND_IP is reserved for a recorded load balancer" >&2
+        echo "       (set LB_REBUILD=1 only to rebuild that exact VM)." >&2
+        exit 1
+        ;;
+    esac
     ;;
 esac
 
@@ -97,6 +113,22 @@ echo "Management interface: DHCP"
 echo "Frontend bridge: $BRIDGE"
 echo "Frontend address: $FRONTEND_IP/24"
 
+# Same SSH key as the Kubernetes nodes (multipass-node.sh), so Ansible can
+# configure the VM. Without it a rebuilt load balancer is unreachable for
+# 02-load-balancers.yml (DR plan T16).
+SSH_PUBLIC_KEY_PATH="${K8S_FINANCE_SSH_PUBLIC_KEY:-$HOME/.ssh/id_ed25519_k8s_finance_ansible.pub}"
+if [[ ! -r "$SSH_PUBLIC_KEY_PATH" ]]; then
+  echo "ERROR: SSH public key not readable: $SSH_PUBLIC_KEY_PATH" >&2
+  exit 1
+fi
+CLOUD_INIT_FILE="$(mktemp)"
+trap 'rm -f "$CLOUD_INIT_FILE"' EXIT
+{
+  echo '#cloud-config'
+  echo 'ssh_authorized_keys:'
+  printf '  - %s\n' "$(<"$SSH_PUBLIC_KEY_PATH")"
+} > "$CLOUD_INIT_FILE"
+
 multipass launch \
   --name "$NAME" \
   --zone "$ZONE" \
@@ -104,6 +136,7 @@ multipass launch \
   --memory "$MEMORY" \
   --disk "$DISK" \
   --network "name=$BRIDGE,mode=manual" \
+  --cloud-init "$CLOUD_INIT_FILE" \
   "$IMAGE"
 
 if ! multipass exec "$NAME" -- ip link show dev eth1 >/dev/null 2>&1; then
