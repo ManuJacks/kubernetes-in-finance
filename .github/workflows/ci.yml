@@ -93,7 +93,7 @@ jobs:
 
       - name: ShellCheck
         run: |
-          shellcheck scripts/*.sh scripts/gameday/*.sh scripts/drills/*.sh scripts/alerting/*.sh
+          shellcheck -x scripts/*.sh scripts/gameday/*.sh scripts/drills/*.sh scripts/alerting/*.sh scripts/dr/*.sh
           shellcheck -s sh monitoring/collectors/*.sh monitoring/alertmanager/tests/*.sh
 
       - name: pytest

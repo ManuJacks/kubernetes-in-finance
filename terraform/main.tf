@@ -166,9 +166,10 @@ resource "terraform_data" "load_balancer_vm" {
     each.value.name,
     each.value.zone,
     each.value.cpus,
-    # launch_memory, not memory: changing the running size must resize the VM
-    # in place (node_memory below), never destroy and recreate it.
-    each.value.launch_memory,
+    # Load balancers have no launch_memory/memory split (nodes do); this list
+    # referenced launch_memory, so any create request failed at plan time
+    # ("Unsupported attribute"). DR plan T14.
+    each.value.memory,
     each.value.disk,
     each.value.frontend_ip,
     var.ubuntu_image

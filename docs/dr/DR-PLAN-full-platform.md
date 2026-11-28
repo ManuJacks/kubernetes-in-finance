@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | **Draft. Tabletop 2026-11-27 found blocking gaps (section 8); not ready to run** |
+| Status | **Ready except T4** (fresh Vault backup after the 24-hour check). Tabletop 2026-11-27 and automation 2026-11-28 found 17 gaps (section 8) |
 | Owner | Operator (robert); executed with Claude |
 | Related | [etcd backup and restore](../runbooks/etcd-backup-restore.md), [Vault restore drill](../runbooks/vault-restore-drill.md), [ADR-007](../decisions/ADR-007-external-vault-secrets-management.md), [API audit runbook](../runbooks/apiserver-audit.md) |
 
@@ -161,6 +161,55 @@ Remove `/opt/vault/data.dr-*`, write the game-day record and the
 post-incident review with the timing sheet, and update this plan with
 what was wrong.
 
+## 5a. Automation (scripts/dr)
+
+Each phase is a script. **Every state-changing script is a dry run unless
+given `--execute`**, and prints exactly what it would run. A test puts fake
+`terraform`, `multipass`, `sudo`, `ansible-playbook`, `kubectl`, `vault` and
+`gpg` first on `PATH` and fails if a dry run calls any of them.
+
+| Script | Phase | Changes state | Needs the operator for |
+|---|---|---|---|
+| `00-preflight.sh` | Go/no-go (section 4) | No; starts the run directory | Confirming the MANUAL items |
+| `10-capture-before.sh` | 0 | No | |
+| `20-destroy.sh --execute` | 1, point of no return | Yes; refuses unless the run's preflight was GO, then asks for a typed phrase | Sudo (Vault) |
+| `30-rebuild.sh --execute` | 2 | Yes | |
+| `40-restore-cluster.sh --execute` | 3 | Yes | gpg passphrase (cluster PKI), sudo (read the export) |
+| `50-restore-vault.sh --execute` | 4 | Yes | sudo, gpg passphrases, 3 of 5 unseal shares |
+| `60-verify.sh` | 5 | No (the tests clean up after themselves) | |
+
+Evidence for one exercise goes to
+`~/.local/share/kubernetes-in-finance/dr-runs/<run>/`: `preflight.md`,
+`before.json`, `after.json`, `verify.md`, `timing.md`, `commands.log` and one
+log per test. `capture-state.py` and `compare-state.py` make "recovered"
+mean "the same as before": same CA and service-account key, same nodes, every
+object by name, the same access model, Vault unsealed, every monitoring target
+up.
+
+**Rehearsal 2026-11-28 04:59 UTC** (run `20261128T045918Z`): preflight
+NO-GO for the right reasons (T4 open, 24-hour check pending, control2/3 PKI
+archives not yet written); before-state captured (310 objects, 18 kinds);
+phases 1–4 printed in full as dry runs; phase 5 run for real against the
+healthy cluster: **RECOVERED, every check passed** (identities, nodes, all
+objects identical, access model, Vault, 15/15 targets, admission guard 27/27,
+grant reaper, Vault login 200/403, API via VIP). A verification that passes
+on a healthy cluster and fails on each injected regression (tests) is what
+makes its result after the DR meaningful.
+
+### Run sheet
+
+```bash
+cd ~/Code/kubernetes-in-finance
+scripts/dr/00-preflight.sh                 # must print GO
+scripts/dr/10-capture-before.sh
+scripts/dr/20-destroy.sh                   # read the dry run first
+scripts/dr/20-destroy.sh --execute         # point of no return
+scripts/dr/30-rebuild.sh --execute
+scripts/dr/40-restore-cluster.sh --execute # gpg passphrase
+scripts/dr/50-restore-vault.sh --execute   # sudo, passphrases, unseal shares
+scripts/dr/60-verify.sh                    # RECOVERED or not
+```
+
 ## 6. Abort and failure handling
 
 Before phase 1: abort freely. After phase 1 there is no rollback; a failed
@@ -188,12 +237,16 @@ changing anything.
 |---|---|---|---|---|
 | T1 | **Cluster PKI was not backed up.** `/etc/kubernetes/pki` (CA, service-account signing key, front-proxy and etcd CAs) exists only on the control-plane VMs. Losing them makes the etcd snapshots restore into a cluster with a new identity: every ServiceAccount token, kubeconfig and the Vault reviewer JWT become invalid | Yes | Encrypted PKI archive written next to every etcd snapshot, to a public key whose private half is held offline | `etcd-backup` role encrypts the CA-level keys with `gpg --recipient-file` beside each snapshot, to the KIF DR backup key | **Closed 2026-11-28.** Live on all three control planes; first archive `cluster-pki-tf-ha-control1-20261128_043515Z.tar.gpg` encrypted to key `3A4B349DEC36404A`, no plaintext, backup status 1. Operator test-decrypt the same day: all 8 files (`ca`, `sa`, `front-proxy-ca`, `etcd/ca`), dated 2026-11-04 (cluster creation), `ca.crt` the same size as the CA Vault trusts |
 | T2 | **VM addresses are not stable.** Multipass assigns DHCP addresses; rebuilt VMs get new ones. Addresses are hard-coded in `ansible/inventory/hosts.yml`, `group_vars/load_balancers.yml` (HAProxy backends), `kubeadm-init.yaml.j2` (`advertiseAddress`), `monitoring/prometheus/prometheus.yml`, and become etcd peer URLs and certificate SANs | Yes | Re-address, not pinning (operator decision 2026-11-28): `scripts/readdress.py` maps each node's old address (inventory) to its new one (`multipass list`) and rewrites whole addresses only, in two phases so swaps are safe. History is never rewritten | **Closed 2026-11-28.** 10 tests; simulated rebuild on a copy of the repository: 7 VMs remapped, 8 files rewritten, no old address left, history byte-identical, VIP untouched |
-| T3 | **The etcd runbook restores one member in place.** Section 6 stops and restores the local member only. For a three-member cluster on new VMs the snapshot must seed a new single-member cluster, and the other two must join fresh. Never rehearsed | Yes | Procedure in phase 3 above; becomes the etcd runbook's "Full rebuild" section once rehearsed | Written here, not rehearsed |
+| T3 | **The etcd runbook restores one member in place.** Section 6 stops and restores the local member only. For a three-member cluster on new VMs the snapshot must seed a new single-member cluster, and the other two must join fresh. Never rehearsed | Yes | `17-restore-control-plane.yml` and the etcd runbook's section 7 "Full rebuild": refuses a node with a cluster, checks the restored CA against the before-state **before** touching etcd, restores a single-member cluster, `kubeadm init` on top, removes stale Nodes | **Partly verified 2026-11-28:** the guard (check mode against live control1: refused, nothing changed) and the exact `etcdutl` restore on a real snapshot into a temp dir. `kubeadm init` on restored data and the joins are proven only by the DR itself |
 | T4 | **The Vault backup is older than the last Vault change.** USB backup `kif-vault-20261127T054931Z`; `auth/kubernetes/config` was rewritten 2026-11-28T00:15Z. Restoring it brings back the expiring reviewer JWT and every login fails | Yes | New encrypted backup before DR; policy: back up after every Vault change | Needs the operator |
 | T5 | **The Vault host is not rebuildable from the repository** (ADR-007 item 8): `vault.hcl` and the package version are only on the host. The systemd unit is the package default | Yes (for phase 4) | `vault-server` role and `16-vault-server.yml`: HashiCorp apt package pinned and held at 2.2.2-1, `vault.hcl` template (renders byte-identical to the live file), directories and ownership, `/etc/hosts` entry, TLS from an operator-supplied directory | **Closed 2026-11-28.** First operator `--check --diff` on the host: `changed=3`, one a real bug (the apt suite came from the Mint codename `zena`, a suite HashiCorp does not publish). After the fix: `changed=1`, only the intended package hold; configuration, TLS, directories and service all `ok`, so the role describes the live host |
 | T6 | **The KIF CA private key and the Vault TLS key had no off-host copy.** A full scan of every disk (2026-11-27, `sudo`, null-delimited, self-checked by finding the live key) found them only on the host NVMe: the CA working directory `/root/kif-pki/` (CA key passphrase-protected), the live `/opt/vault/tls/`, and Timeshift snapshots on the same disk. The first version of the scan reported nothing, because `xargs` without `-0` aborts silently on a filename containing a quote; the self-check now makes that a failure, not a clean result | Yes (for phase 4) | Encrypted archive on the USB disk: `kif-dr/kif-host-pki-20261128.tar.gpg` (`root/kif-pki`, `opt/vault/tls`, `etc/vault.d`; SHA-256 `c67b08fa…4e60f5`), encrypted to the KIF DR backup key. CA key passphrase verified against the CA certificate and stored in KeePassXC (`KIF Internal Root CA key`) | **Closed 2026-11-28.** Restore proven: the USB copy of the private key, imported alone into an empty keyring, decrypted the archive and listed all 16 entries |
 | T12 | All off-host copies (Vault snapshot, DR key, host PKI archive, KeePassXC) are on **one** USB disk | No | A second copy in another place (second disk, kept elsewhere) | Open |
 | T13 | The DR private key's only copies are this host's keyring and the USB disk. Its passphrase is in KeePassXC (`KIF DR backup gpg key`) | No | Covered by T12 | Noted |
+| T14 | **Terraform could not create a load balancer.** `load_balancer_vm` referred to `each.value.launch_memory`, which the variable type does not have; any create request failed at plan time ("Unsupported attribute"). `terraform validate` passed, so it went unnoticed | Yes | Use `each.value.memory`; a plan with a create request now succeeds (`1 to add`) | **Closed 2026-11-28** |
+| T15 | **The load balancer script refused to rebuild the recorded load balancers.** Their frontend addresses `10.97.3.11` and `.12` were "reserved" for everyone, including the VMs that own them | Yes | `LB_REBUILD=1` allows exactly the recorded address for that name, nothing else; VIP still never allowed. 8 tests | **Closed 2026-11-28** |
+| T16 | **A rebuilt load balancer would have had no SSH key** (the node script injects it with cloud-init, the load balancer script did not), so `02-load-balancers.yml` could not configure it | Yes | Same cloud-init key injection as the nodes; tested | **Closed 2026-11-28** |
+| T17 | **Every playbook would fail after a rebuild with "REMOTE HOST IDENTIFICATION HAS CHANGED"**: `host_key_checking = True` and `known_hosts` holds the old keys | Yes | `scripts/dr/trust-host-keys.sh` reads each new VM's host key over `multipass exec` (not over SSH, so nothing is trusted on first use) and pins it. Live test against a temporary known_hosts: 7 keys pinned, strict SSH to all 7 succeeded. It also caught its own bug (`multipass exec` read the loop's stdin, pinning only the first VM) | **Closed 2026-11-28** |
 | T7 | The load balancers are not in the Terraform lifecycle, and `multipass-load-balancer.sh` has no destroy action: they are deleted with `multipass delete --purge` and rebuilt with the script's `create` | No | Phase 1–2 commands above | Noted |
 | T8 | kubeadm drops the API audit flags on rebuild | No | Phase 3 step 7 | Noted |
 | T9 | Unknown whether add-on playbooks must run again after an etcd restore (their objects are restored, their pods are not) | No | Decide during the run; record | Open |
