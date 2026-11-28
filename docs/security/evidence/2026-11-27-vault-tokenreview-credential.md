@@ -60,8 +60,29 @@ database_path_http_status=403
 Vault Kubernetes smoke test passed; temporary resources will be removed.
 ```
 
-## 4. Pending: 24-hour re-run
+## 4. Vault audit log
+
+Audit device `file/` writes `/var/log/vault/audit.log` (`0700 vault:vault`,
+not readable by the operator account). Extracted by the operator with sudo,
+using `scripts/vault-audit-extract.py`, which keeps only time, type, path,
+operation, identity, policies and error and drops every HMAC'd field and token:
+
+```console
+$ sudo python3 -I scripts/vault-audit-extract.py /var/log/vault/audit.log
+{"time": "2026-11-28T00:15:04.008245039Z", "type": "request", "path": "auth/kubernetes/login", "operation": "update", "remote_address": "10.97.0.2", "display_name": null, "policies": null, "sa": null, "error": null}
+{"time": "2026-11-28T00:15:04.029396482Z", "type": "response", "path": "auth/kubernetes/login", "operation": "update", "remote_address": "10.97.0.2", "display_name": "kubernetes-debug-system-prod-debug-sa", "policies": ["default", "production-debug-secrets"], "sa": "debug-system/prod-debug-sa", "error": null}
+{"time": "2026-11-28T00:15:04.117091625Z", "type": "request", "path": "secret/data/production-debug/application/smoke-test", "operation": "read", "remote_address": "10.97.0.2", "display_name": "kubernetes-debug-system-prod-debug-sa", "policies": ["default", "production-debug-secrets"], "sa": "debug-system/prod-debug-sa", "error": null}
+{"time": "2026-11-28T00:15:04.117715677Z", "type": "response", "path": "secret/data/production-debug/application/smoke-test", "operation": "read", "remote_address": "10.97.0.2", "display_name": "kubernetes-debug-system-prod-debug-sa", "policies": ["default", "production-debug-secrets"], "sa": "debug-system/prod-debug-sa", "error": null}
+{"time": "2026-11-28T00:15:04.136658474Z", "type": "request", "path": "secret/data/production-debug/database/smoke-test", "operation": "read", "remote_address": "10.97.0.2", "display_name": "kubernetes-debug-system-prod-debug-sa", "policies": ["default", "production-debug-secrets"], "sa": "debug-system/prod-debug-sa", "error": "1 error occurred:\n\t* permission denied\n\n"}
+{"time": "2026-11-28T00:15:04.136820446Z", "type": "response", "path": "secret/data/production-debug/database/smoke-test", "operation": "read", "remote_address": "10.97.0.2", "display_name": "kubernetes-debug-system-prod-debug-sa", "policies": ["default", "production-debug-secrets"], "sa": "debug-system/prod-debug-sa", "error": "1 error occurred:\n\t* permission denied\n\n"}
+```
+
+The three requests match the smoke test in §3: the login is attributed to
+`debug-system/prod-debug-sa` with `production-debug-secrets`, the
+application read succeeds, and the database read is recorded as denied.
+
+## 5. Pending: 24-hour re-run
 
 Vault cannot return the reviewer JWT, so whether it expires can only be shown
 by a login that still works later. Re-run the smoke test no earlier than
-2026-11-29T00:15Z (2026-11-28 19:15 EST) and add the output here as §5.
+2026-11-29T00:15Z (2026-11-28 19:15 EST) and add the output here as §6.
