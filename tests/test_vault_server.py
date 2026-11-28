@@ -60,3 +60,23 @@ def test_dr_recipient_is_a_public_key_only():
     key = read(ROOT, "ansible", "files", "dr-backup-recipient.asc")
     assert key.startswith("-----BEGIN PGP PUBLIC KEY BLOCK-----")
     assert "PRIVATE" not in key
+
+
+def test_apt_suite_is_ubuntu_not_the_distribution_codename():
+    """Mint reports its own codename (zena); HashiCorp only has Ubuntu suites."""
+    defaults = yaml.safe_load(read(ROLE, "defaults", "main.yml"))
+    assert all("ansible_distribution_release" not in str(v) for v in defaults.values())
+    assert defaults["vault_apt_suite"] == "noble"
+
+
+def test_apt_repo_line_matches_the_live_host_source():
+    defaults = yaml.safe_load(read(ROLE, "defaults", "main.yml"))
+    line = (
+        defaults["vault_apt_repo"]
+        .replace("{{ vault_apt_keyring }}", defaults["vault_apt_keyring"])
+        .replace("{{ vault_apt_suite }}", defaults["vault_apt_suite"])
+    )
+    assert line == (
+        "deb [arch=amd64 signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] "
+        "https://apt.releases.hashicorp.com noble main"
+    )

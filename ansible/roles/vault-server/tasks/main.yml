@@ -2,17 +2,24 @@
 # Vault always starts sealed. Unsealing (3 of 5 shares) and restoring data
 # (vault operator raft snapshot restore) are operator steps, by design.
 
-- name: Add the HashiCorp apt signing key
-  ansible.builtin.get_url:
-    url: "{{ vault_apt_key_url }}"
-    dest: /usr/share/keyrings/hashicorp-archive-key.asc
-    mode: "0644"
-  register: vault_apt_key
+- name: Check for the HashiCorp apt keyring
+  ansible.builtin.stat:
+    path: "{{ vault_apt_keyring }}"
+  register: vault_apt_keyring_stat
 
-- name: Dearmor the HashiCorp signing key into the keyring
-  ansible.builtin.command:
-    cmd: gpg --batch --yes --dearmor -o {{ vault_apt_keyring }} /usr/share/keyrings/hashicorp-archive-key.asc
-    creates: "{{ vault_apt_keyring }}"
+- name: Install the HashiCorp apt keyring (only when missing)
+  when: not vault_apt_keyring_stat.stat.exists
+  block:
+    - name: Download the HashiCorp apt signing key
+      ansible.builtin.get_url:
+        url: "{{ vault_apt_key_url }}"
+        dest: /usr/share/keyrings/hashicorp-archive-key.asc
+        mode: "0644"
+
+    - name: Dearmor the HashiCorp signing key into the keyring
+      ansible.builtin.command:
+        cmd: gpg --batch --yes --dearmor -o {{ vault_apt_keyring }} /usr/share/keyrings/hashicorp-archive-key.asc
+        creates: "{{ vault_apt_keyring }}"
 
 - name: Add the HashiCorp apt repository
   ansible.builtin.apt_repository:
