@@ -24,3 +24,21 @@ etcd_backup_endpoint: "https://127.0.0.1:2379"
 etcd_backup_ca_cert: "/etc/kubernetes/pki/etcd/ca.crt"
 etcd_backup_cert: "/etc/kubernetes/pki/etcd/server.crt"
 etcd_backup_key: "/etc/kubernetes/pki/etcd/server.key"
+
+# Cluster PKI backup (docs/dr/DR-PLAN-full-platform.md, gap T1). The CA-level
+# keys kubeadm needs to rebuild the same cluster identity; leaf certificates
+# are regenerated. The archive is encrypted to the operator's public key
+# (ASCII-armored, on the controller); the private key never reaches the nodes.
+# Empty disables the PKI backup.
+etcd_backup_pki_recipient_key: ""
+etcd_backup_pki_dir: /etc/kubernetes/pki
+etcd_backup_pki_files:
+  - ca.crt
+  - ca.key
+  - sa.key
+  - sa.pub
+  - front-proxy-ca.crt
+  - front-proxy-ca.key
+  - etcd/ca.crt
+  - etcd/ca.key
+etcd_backup_pki_recipient_path: "{{ '/etc/etcd-backup/pki-recipient.asc' if etcd_backup_pki_recipient_key else '' }}"

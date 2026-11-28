@@ -1,0 +1,22 @@
+---
+# Rebuild the Vault service on this host from the repository (DR plan,
+# phase 4; ADR-007 item 8). Needs sudo on the host:
+#
+#   ANSIBLE_CONFIG=ansible/ansible.cfg ansible-playbook \
+#     -i ansible/inventory/hosts.yml ansible/playbooks/16-vault-server.yml \
+#     --ask-become-pass [-e vault_tls_source_dir=/path/to/restored/tls]
+#
+# WARNING: any change to vault.hcl or the TLS files restarts Vault, and a
+# restart SEALS it. On the live host always run with --check --diff first;
+# the template renders byte-identical to today's config, so it should report
+# no changes.
+#
+# Vault starts sealed with whatever is in its data directory. Restoring the
+# Raft snapshot and unsealing are operator steps (docs/runbooks/vault-restore-drill.md).
+- name: Vault server on the host
+  hosts: localhost
+  connection: local
+  become: true
+  gather_facts: true
+  roles:
+    - vault-server

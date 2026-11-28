@@ -9,6 +9,11 @@ KEY="{{ etcd_backup_key }}"
 RETENTION_DAYS="{{ etcd_backup_retention_days }}"
 REQUIRE_MOUNT="{{ 'true' if (etcd_backup_require_mount | bool or etcd_backup_use_nfs | bool) else 'false' }}"
 NODE_NAME="${NODE_NAME:-$(hostname -s 2>/dev/null || hostname)}"
+# Cluster PKI archive (DR plan, gap T1). Encrypted to a public key whose
+# private half is held offline; empty PKI_RECIPIENT disables it.
+PKI_DIR="{{ etcd_backup_pki_dir }}"
+PKI_RECIPIENT="{{ etcd_backup_pki_recipient_path }}"
+PKI_FILES="{{ etcd_backup_pki_files | join(' ') }}"
 
 # Record the outcome of every attempt for monitoring (backup success KPI).
 # The status file lives next to the snapshots so the host collector sees it.
@@ -73,8 +78,28 @@ elif command -v /usr/local/bin/etcdctl >/dev/null 2>&1; then
   ETCDCTL_API=3 /usr/local/bin/etcdctl snapshot status "${SNAPSHOT_FILE}" --write-out=table
 fi
 
+# Without the cluster CA and service-account signing key, a snapshot restores
+# into a cluster with a new identity: every token and kubeconfig breaks.
+if [ -n "${PKI_RECIPIENT}" ]; then
+  if [ ! -r "${PKI_RECIPIENT}" ]; then
+    echo "ERROR: PKI recipient key ${PKI_RECIPIENT} is not readable." >&2
+    exit 1
+  fi
+  PKI_FILE="${BACKUP_DIR}/cluster-pki-${NODE_NAME}-${DATE}.tar.gpg"
+  GNUPGHOME_TMP="$(mktemp -d)"
+  # shellcheck disable=SC2086  # PKI_FILES is a space-separated list
+  tar -C "${PKI_DIR}" -cf - ${PKI_FILES} |
+    gpg --batch --no-tty --quiet --homedir "${GNUPGHOME_TMP}" --trust-model always \
+      --recipient-file "${PKI_RECIPIENT}" --encrypt --output "${PKI_FILE}.tmp"
+  rm -rf "${GNUPGHOME_TMP}"
+  chmod 0600 "${PKI_FILE}.tmp"
+  mv "${PKI_FILE}.tmp" "${PKI_FILE}"
+  echo "[$(date -u)] Encrypted cluster PKI written to ${PKI_FILE}"
+fi
+
 # Prune old snapshots for this specific node exceeding retention policy
 echo "[$(date -u)] Pruning snapshots for node '${NODE_NAME}' older than ${RETENTION_DAYS} days..."
 find "${BACKUP_DIR}" -type f -name "etcd-snapshot-${NODE_NAME}-*.db" -mtime +"${RETENTION_DAYS}" -print -delete
+find "${BACKUP_DIR}" -type f -name "cluster-pki-${NODE_NAME}-*.tar.gpg" -mtime +"${RETENTION_DAYS}" -print -delete
 
 echo "[$(date -u)] etcd backup completed successfully."

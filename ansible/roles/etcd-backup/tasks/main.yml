@@ -30,6 +30,30 @@
     group: root
     mode: "0750"
 
+- name: Install the public key the cluster PKI archive is encrypted to
+  when: etcd_backup_pki_recipient_key | length > 0
+  block:
+    - name: Ensure gpg is present
+      ansible.builtin.package:
+        name: gpg
+        state: present
+
+    - name: Ensure the backup configuration directory exists
+      ansible.builtin.file:
+        path: /etc/etcd-backup
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Copy the PKI recipient public key
+      ansible.builtin.copy:
+        src: "{{ etcd_backup_pki_recipient_key }}"
+        dest: "{{ etcd_backup_pki_recipient_path }}"
+        owner: root
+        group: root
+        mode: "0644"
+
 - name: Deploy etcd backup systemd service
   ansible.builtin.template:
     src: etcd-backup.service.j2
