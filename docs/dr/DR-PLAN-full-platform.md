@@ -95,8 +95,16 @@ scripts/multipass-load-balancer.sh create api-lb1-new zone2 ...   # arguments fr
 scripts/multipass-load-balancer.sh create api-lb2-new zone3 ...
 ```
 
-New VMs get new DHCP addresses (gap T2). Until T2 is closed, every file in
-section 8, T2, must be updated before phase 3.
+New VMs get new DHCP addresses (gap T2). Re-address the repository from
+the new VMs before anything else runs against them:
+
+```bash
+scripts/readdress.py            # dry run: the old -> new map and a diff
+scripts/readdress.py --apply    # rewrite inventory, HAProxy backends, kubeadm template, Prometheus, docs
+```
+
+It refuses a map with a missing VM, a duplicate address or a change of zone
+subnet. The NFS export and host NAT rules are per subnet and need no change.
 
 ### Phase 3: Kubernetes from the restored state
 
@@ -178,8 +186,8 @@ changing anything.
 
 | # | Finding | Blocking | Fix | Status |
 |---|---|---|---|---|
-| T1 | **Cluster PKI is not backed up.** `/etc/kubernetes/pki` (CA, service-account signing key, front-proxy and etcd CAs) exists only on the control-plane VMs. Losing them makes the etcd snapshots restore into a cluster with a new identity: every ServiceAccount token, kubeconfig and the Vault reviewer JWT become invalid | Yes | Encrypted PKI archive written next to every etcd snapshot, to a public key whose private half is held offline | `etcd-backup` role encrypts the CA-level keys with `gpg --recipient-file` beside each snapshot (round-trip tested). Off until the operator creates a key pair and sets `etcd_backup_pki_recipient_key` |
-| T2 | **VM addresses are not stable.** Multipass assigns DHCP addresses; rebuilt VMs get new ones. Addresses are hard-coded in `ansible/inventory/hosts.yml`, `group_vars/load_balancers.yml` (HAProxy backends), `kubeadm-init.yaml.j2` (`advertiseAddress`), `monitoring/prometheus/prometheus.yml`, and become etcd peer URLs and certificate SANs | Yes | Either pin addresses, or a re-address step that regenerates these from `multipass list` | Decision needed |
+| T1 | **Cluster PKI was not backed up.** `/etc/kubernetes/pki` (CA, service-account signing key, front-proxy and etcd CAs) exists only on the control-plane VMs. Losing them makes the etcd snapshots restore into a cluster with a new identity: every ServiceAccount token, kubeconfig and the Vault reviewer JWT become invalid | Yes | Encrypted PKI archive written next to every etcd snapshot, to a public key whose private half is held offline | `etcd-backup` role encrypts the CA-level keys with `gpg --recipient-file` beside each snapshot, to the KIF DR backup key | **Closed 2026-11-28.** Live on all three control planes; first archive `cluster-pki-tf-ha-control1-20261128_043515Z.tar.gpg` encrypted to key `3A4B349DEC36404A`, no plaintext, backup status 1 |
+| T2 | **VM addresses are not stable.** Multipass assigns DHCP addresses; rebuilt VMs get new ones. Addresses are hard-coded in `ansible/inventory/hosts.yml`, `group_vars/load_balancers.yml` (HAProxy backends), `kubeadm-init.yaml.j2` (`advertiseAddress`), `monitoring/prometheus/prometheus.yml`, and become etcd peer URLs and certificate SANs | Yes | Re-address, not pinning (operator decision 2026-11-28): `scripts/readdress.py` maps each node's old address (inventory) to its new one (`multipass list`) and rewrites whole addresses only, in two phases so swaps are safe. History is never rewritten | **Closed 2026-11-28.** 10 tests; simulated rebuild on a copy of the repository: 7 VMs remapped, 8 files rewritten, no old address left, history byte-identical, VIP untouched |
 | T3 | **The etcd runbook restores one member in place.** Section 6 stops and restores the local member only. For a three-member cluster on new VMs the snapshot must seed a new single-member cluster, and the other two must join fresh. Never rehearsed | Yes | Procedure in phase 3 above; becomes the etcd runbook's "Full rebuild" section once rehearsed | Written here, not rehearsed |
 | T4 | **The Vault backup is older than the last Vault change.** USB backup `kif-vault-20261127T054931Z`; `auth/kubernetes/config` was rewritten 2026-11-28T00:15Z. Restoring it brings back the expiring reviewer JWT and every login fails | Yes | New encrypted backup before DR; policy: back up after every Vault change | Needs the operator |
 | T5 | **The Vault host is not rebuildable from the repository** (ADR-007 item 8): `vault.hcl` and the package version are only on the host. The systemd unit is the package default | Yes (for phase 4) | `vault-server` role and `16-vault-server.yml`: HashiCorp apt package pinned and held at 2.2.2-1, `vault.hcl` template (renders byte-identical to the live file), directories and ownership, `/etc/hosts` entry, TLS from an operator-supplied directory | Written and linted; operator to run `--check --diff` on the host (needs sudo) and confirm no changes |
